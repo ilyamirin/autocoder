@@ -1,0 +1,71 @@
+services:
+  pet-app:
+    build: .
+    command: uvicorn services.pet_app.app:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+
+  control-room:
+    build: .
+    command: uvicorn services.control_room.app:app --host 0.0.0.0 --port 8010
+    ports:
+      - "8010:8010"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - orchestrator
+
+  orchestrator:
+    build: .
+    command: uvicorn services.orchestrator.app:app --host 0.0.0.0 --port 8020
+    ports:
+      - "8020:8020"
+    volumes:
+      - ./data:/app/data
+
+  kanboard:
+    image: kanboard/kanboard:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - ./data/kanboard:/var/www/app/data
+      - ./data/kanboard/plugins:/var/www/app/plugins
+      - ./data/kanboard/ssl:/etc/nginx/ssl
+
+  gitea:
+    image: gitea/gitea:1.24.6
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - ./data/gitea:/data
+
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:v3
+    ports:
+      - "9000:8000"
+    environment:
+      WOODPECKER_OPEN: "true"
+      WOODPECKER_ADMIN: ${GITEA_ADMIN_USERNAME}
+      WOODPECKER_HOST: http://localhost:9000
+      WOODPECKER_SERVER_ADDR: :8000
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
+      WOODPECKER_GITEA: "true"
+      WOODPECKER_GITEA_URL: http://gitea:3000
+      WOODPECKER_GITEA_CLIENT: ${WOODPECKER_GITEA_CLIENT}
+      WOODPECKER_GITEA_SECRET: ${WOODPECKER_GITEA_SECRET}
+    depends_on:
+      - gitea
+
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:v3
+    command: agent
+    environment:
+      WOODPECKER_SERVER: woodpecker-server:9000
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - woodpecker-server
