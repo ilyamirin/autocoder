@@ -13,27 +13,16 @@ The pet app is a compact seller operations dashboard that acts as a reduced
 copy of an e-commerce seller back office. It is intentionally small but rich
 enough to produce visible bugs, fixes, tests, and deployments.
 
-## Current Scope
+## What Works Now
 
-This repository starts with a working scaffold:
-
-- project plan with stage-by-stage Definition of Done
-- compose topology for the full stack
-- Python service skeletons for the custom services
-- seedable demo data for the pet app and control room
-
-The first implementation milestone focuses on local reproducibility and
-observability. External integrations with Kanboard and Gitea are introduced
-progressively rather than hidden behind a large opaque bootstrap.
-
-## Current Milestones Implemented
-
-- repository scaffold with staged implementation plan
-- FastAPI services for `pet-app`, `control-room`, and `orchestrator`
-- shared SQLite-backed demo task store with seeded backlog and done tasks
-- Kanboard seed script that creates the project, user, columns, and cards
-- minimal `Gitea Actions` workflow for running `pytest`
-- real task executor with `git worktree`, model-driven file edits, commit, push, and CI polling
+- full stack runs in one `docker compose`
+- `Kanboard` is the human task intake and status board
+- `orchestrator` claims `Ready` tasks from `Kanboard`
+- the executor creates a dedicated `git worktree` and `codex/...` branch per run
+- the coding agent calls a local OpenAI-compatible model endpoint and edits only whitelisted files
+- the executor runs local tests, pushes to `Gitea`, waits for `Gitea Actions`, and promotes successful changes into the live runtime branch
+- the running `pet-app` serves code from the live runtime worktree, so successful tasks become visible in the browser
+- completed tasks remain visible in the `Done` column in `Kanboard`
 
 ## Development
 
@@ -45,6 +34,25 @@ progressively rather than hidden behind a large opaque bootstrap.
 docker compose up --build
 ```
 
+The repository is developed with local Homebrew Python 3.12 and a local virtual
+environment:
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+```
+
+## Manual Demo Flow
+
+1. Open `Kanboard`
+2. Move a backlog task into `Ready`
+3. Wait for `orchestrator` to claim it and move it through `Planning`, `Coding`, `Testing`, `Deploy`, and `Done`
+4. Watch branch, commit, and CI status in `Gitea`
+5. Refresh the live `pet-app` and verify the change in the browser
+
+The currently verified end-to-end task is `BL-008`, which adds a visible `Low stock`
+badge on the live `/products` page.
+
 ## Services
 
 - `pet-app`: seller dashboard demo application
@@ -54,13 +62,28 @@ docker compose up --build
 - `gitea`: repository hosting and PR UI
 - `gitea-actions-runner`: executes Gitea Actions jobs in Docker
 
+## Default URLs
+
+- `pet-app`: [http://localhost:18000](http://localhost:18000)
+- `control-room`: [http://localhost:18010](http://localhost:18010)
+- `orchestrator`: [http://localhost:18020](http://localhost:18020)
+- `kanboard`: [http://localhost:18080](http://localhost:18080)
+- `gitea`: [http://localhost:13000](http://localhost:13000)
+
+## Demo Credentials
+
+- `Kanboard` admin: `configured in .env`
+- `Kanboard` demo user: `demo.operator / replace-me`
+- `Gitea`: `ilya / replace-me`
+
 ## Agent Execution
 
 - the executor watches `Ready` tasks and claims one at a time
 - each task gets its own `git worktree` and branch under `codex/...`
 - the coding agent calls the local OpenAI-compatible model service from `MODEL_BASE_URL`
 - the agent writes full-file replacements for a constrained file set, runs `pytest`, commits, pushes, and waits for `Gitea Actions`
-- branch, commit, and CI links are written back into the control-room store
+- successful tasks are promoted into the managed live runtime worktree under `data/live_runtime`
+- branch, commit, CI, and live commit metadata are written back into the control-room store
 - executor profiles currently cover all backlog areas: `finance`, `orders`, `dashboard`, `products`, `platform`, and `data`
 - backlog tasks are marked with `execution_risk`: `safe`, `medium`, or `review`
 
@@ -87,9 +110,31 @@ PYTHONPATH=. .venv/bin/python scripts/run_executor_once.py --task-id BL-001 --fo
 - `kanboard-seed` uses JSON-RPC against `http://kanboard/jsonrpc.php`
 - `gitea-actions-runner` registers itself with the static instance token exposed by `Gitea`
 - the runner and action job containers reach the local forge through `http://host.docker.internal:13000`
-- the orchestrator bind-mounts the repo, creates worktrees in `data/worktrees`, and reaches the host model service through `host.docker.internal`
+- the orchestrator bind-mounts the repo, creates task worktrees in `data/worktrees`, and manages the live runtime worktree in `data/live_runtime`
+- the orchestrator reaches the host model service through `host.docker.internal`
 
 ## Safety
 
 Secrets are never committed. Use `.env` for local credentials and API keys.
 A dedicated secret scan script is run before each commit.
+
+Git operations inside the executor are protected by a small safety helper so
+stale `.lock` files do not break autonomous runs.
+
+## Test Notes
+
+Do not run bare `pytest` from the repository root after the live runtime or
+task worktrees exist. Those directories contain mirrored test files and pytest
+will collect duplicates.
+
+Use one of these instead:
+
+```bash
+PYTHONPATH=. .venv/bin/pytest tests/test_kanboard_sync.py tests/test_orchestrator.py tests/test_store.py tests/test_control_room.py tests/test_git_safety.py tests/test_live_runtime.py
+```
+
+or:
+
+```bash
+PYTHONPATH=. .venv/bin/pytest tests/test_pet_app.py
+```
