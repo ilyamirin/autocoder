@@ -53,6 +53,25 @@ docker compose up --build
 - `gitea`: repository hosting and PR UI
 - `woodpecker-server` / `woodpecker-agent`: CI/CD pipeline execution
 
+## Port Map
+
+- `18000` -> `pet-app:8000`
+- `18010` -> `control-room:8010`
+- `18020` -> `orchestrator:8020`
+- `18080` -> `kanboard:80`
+- `13000` -> `gitea:3000`
+- `12222` -> `gitea:22`
+- `19000` -> `woodpecker-server:8000`
+
+## Routing
+
+- human task intake starts in `Kanboard`
+- the demo services share state through `data/demo.db`
+- `control-room` links out to `Kanboard`, `Gitea`, `Woodpecker`, and the live `pet-app`
+- `kanboard-seed` uses JSON-RPC against `http://kanboard/jsonrpc.php`
+- `woodpecker-agent` talks to `woodpecker-server:9000` over the internal Docker network
+- browser-facing `Woodpecker` OAuth uses `localhost:13000` for `Gitea`
+
 ## Safety
 
 Secrets are never committed. Use `.env` for local credentials and API keys.

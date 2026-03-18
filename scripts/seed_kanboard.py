@@ -12,11 +12,8 @@ from services.common.task_catalog import BOARD_COLUMNS, DEFAULT_TASKS
 
 class KanboardClient:
     def __init__(self, url: str, username: str, token: str) -> None:
-        self._client = httpx.Client(
-            base_url=url,
-            auth=(username, token),
-            timeout=httpx.Timeout(20.0),
-        )
+        self._url = url.rstrip("/")
+        self._client = httpx.Client(auth=(username, token), timeout=httpx.Timeout(20.0))
         self._request_id = 0
 
     def close(self) -> None:
@@ -30,7 +27,7 @@ class KanboardClient:
             "method": method,
             "params": params or {},
         }
-        response = self._client.post("", json=payload)
+        response = self._client.post(self._url, json=payload)
         response.raise_for_status()
         body = response.json()
         if body.get("error"):
@@ -152,8 +149,8 @@ def ensure_tasks(client: KanboardClient, project_id: int, owner_id: int, column_
 def main() -> None:
     client = KanboardClient(
         url=os.getenv("KANBOARD_URL", "http://kanboard/jsonrpc.php"),
-        username=os.getenv("KANBOARD_API_USERNAME", "jsonrpc"),
-        token=os.environ["KANBOARD_API_TOKEN"],
+        username=os.getenv("KANBOARD_API_USERNAME") or os.getenv("KANBOARD_ADMIN_USERNAME", "admin"),
+        token=os.getenv("KANBOARD_API_TOKEN") or os.getenv("KANBOARD_ADMIN_PASSWORD", "admin"),
     )
     try:
         wait_for_server(client)

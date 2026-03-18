@@ -3,7 +3,7 @@ services:
     build: .
     command: uvicorn services.pet_app.app:app --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "${PET_APP_PORT:-18000}:8000"
     volumes:
       - ./data:/app/data
 
@@ -11,7 +11,7 @@ services:
     build: .
     command: uvicorn services.control_room.app:app --host 0.0.0.0 --port 8010
     ports:
-      - "8010:8010"
+      - "${CONTROL_ROOM_PORT:-18010}:8010"
     volumes:
       - ./data:/app/data
     depends_on:
@@ -21,14 +21,14 @@ services:
     build: .
     command: uvicorn services.orchestrator.app:app --host 0.0.0.0 --port 8020
     ports:
-      - "8020:8020"
+      - "${ORCHESTRATOR_PORT:-18020}:8020"
     volumes:
       - ./data:/app/data
 
   kanboard:
     image: kanboard/kanboard:latest
     ports:
-      - "8080:80"
+      - "${KANBOARD_HTTP_PORT:-18080}:80"
     volumes:
       - ./data/kanboard:/var/www/app/data
       - ./data/kanboard/plugins:/var/www/app/plugins
@@ -39,6 +39,8 @@ services:
     command: python scripts/seed_kanboard.py
     environment:
       KANBOARD_URL: http://kanboard/jsonrpc.php
+      KANBOARD_ADMIN_USERNAME: ${KANBOARD_ADMIN_USERNAME}
+      KANBOARD_ADMIN_PASSWORD: ${KANBOARD_ADMIN_PASSWORD}
       KANBOARD_API_USERNAME: ${KANBOARD_API_USERNAME}
       KANBOARD_API_TOKEN: ${KANBOARD_API_TOKEN}
       KANBOARD_PROJECT_NAME: ${KANBOARD_PROJECT_NAME}
@@ -51,24 +53,34 @@ services:
 
   gitea:
     image: gitea/gitea:1.24.6
+    environment:
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__database__PATH: /data/gitea/gitea.db
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__ROOT_URL: http://localhost:${GITEA_HTTP_PORT:-13000}
+      GITEA__server__SSH_PORT: ${GITEA_SSH_PORT:-12222}
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__webhook__ALLOWED_HOST_LIST: external,loopback
     ports:
-      - "3000:3000"
-      - "2222:22"
+      - "${GITEA_HTTP_PORT:-13000}:3000"
+      - "${GITEA_SSH_PORT:-12222}:22"
     volumes:
       - ./data/gitea:/data
 
   woodpecker-server:
     image: woodpeckerci/woodpecker-server:v3
     ports:
-      - "9000:8000"
+      - "${WOODPECKER_HTTP_PORT:-19000}:8000"
     environment:
       WOODPECKER_OPEN: "true"
       WOODPECKER_ADMIN: ${GITEA_ADMIN_USERNAME}
-      WOODPECKER_HOST: http://localhost:9000
+      WOODPECKER_HOST: http://localhost:${WOODPECKER_HTTP_PORT:-19000}
+      WOODPECKER_DEV_OAUTH_HOST: http://localhost:${WOODPECKER_HTTP_PORT:-19000}
       WOODPECKER_SERVER_ADDR: :8000
       WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
       WOODPECKER_GITEA: "true"
       WOODPECKER_GITEA_URL: http://gitea:3000
+      WOODPECKER_DEV_GITEA_OAUTH_URL: http://localhost:${GITEA_HTTP_PORT:-13000}
       WOODPECKER_GITEA_CLIENT: ${WOODPECKER_GITEA_CLIENT}
       WOODPECKER_GITEA_SECRET: ${WOODPECKER_GITEA_SECRET}
     depends_on:
@@ -80,6 +92,7 @@ services:
     environment:
       WOODPECKER_SERVER: woodpecker-server:9000
       WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
+      WOODPECKER_BACKEND_DOCKER_NETWORK: autocoder_example_default
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
