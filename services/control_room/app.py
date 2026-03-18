@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from services.common.store import build_status_summary, initialize_store, list_recent_events, list_tasks, move_task_to_ready
+from services.common.store import build_status_summary, initialize_store, list_recent_events, list_tasks
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -30,9 +30,3 @@ def dashboard(request: Request) -> HTMLResponse:
         "events": list_recent_events(),
     }
     return templates.TemplateResponse(request, "index.html", context)
-
-
-@app.post("/tasks/{task_id}/ready")
-def mark_ready(task_id: str, redirect_to: str = "/") -> RedirectResponse:
-    move_task_to_ready(task_id)
-    return RedirectResponse(url=redirect_to, status_code=303)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "autonomous-coding-demo"
 version = "0.1.0"
-description = "Autonomous coding demo stack with Kanboard, Gitea, Woodpecker, and FastAPI services."
+description = "Autonomous coding demo stack with Kanboard, Gitea Actions, and FastAPI services."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

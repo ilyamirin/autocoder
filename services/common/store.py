@@ -6,7 +6,7 @@ from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from services.common.task_catalog import DEFAULT_TASKS
 
@@ -21,13 +21,17 @@ STATUS_ORDER = [
     "failed",
 ]
 
-TRANSITION_FLOW = {
-    "ready": "planning",
-    "planning": "coding",
-    "coding": "testing",
-    "testing": "deploy",
-    "deploy": "done",
+TASK_COLUMNS = {
+    "branch_name": "TEXT",
+    "repo_link": "TEXT",
+    "ci_link": "TEXT",
+    "commit_sha": "TEXT",
+    "live_commit_sha": "TEXT",
+    "worktree_path": "TEXT",
+    "last_error": "TEXT",
+    "execution_risk": "TEXT",
 }
+
 
 def utc_now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
@@ -81,48 +85,105 @@ def initialize_store() -> None:
             )
             """
         )
+        _ensure_task_columns(connection)
+        _sync_catalog_metadata(connection)
         task_count = connection.execute("SELECT COUNT(*) AS count FROM tasks").fetchone()["count"]
         if task_count == 0:
-            timestamp = utc_now()
-            for task in DEFAULT_TASKS:
-                connection.execute(
-                    """
-                    INSERT INTO tasks (
-                        id, title, kind, status, summary, acceptance_criteria,
-                        target_area, branch_name, repo_link, ci_link, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        task["id"],
-                        task["title"],
-                        task["kind"],
-                        task["status"],
-                        task["summary"],
-                        task["acceptance_criteria"],
-                        task["target_area"],
-                        None,
-                        None,
-                        None,
-                        timestamp,
-                        timestamp,
-                    ),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO events (task_id, event_type, message, created_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (
-                        task["id"],
-                        "seeded",
-                        f"Task {task['id']} seeded in status {task['status']}.",
-                        timestamp,
-                    ),
-                )
+            _seed_tasks(connection)
 
 
-def list_tasks() -> list[dict]:
+def _ensure_task_columns(connection: sqlite3.Connection) -> None:
+    current_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+    }
+    for column_name, column_type in TASK_COLUMNS.items():
+        if column_name not in current_columns:
+            connection.execute(f"ALTER TABLE tasks ADD COLUMN {column_name} {column_type}")
+
+
+def _seed_tasks(connection: sqlite3.Connection) -> None:
+    timestamp = utc_now()
+    for task in DEFAULT_TASKS:
+        connection.execute(
+            """
+            INSERT INTO tasks (
+                id, title, kind, status, summary, acceptance_criteria,
+                target_area, execution_risk, branch_name, repo_link, ci_link, commit_sha,
+                worktree_path, last_error, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task["id"],
+                task["title"],
+                task["kind"],
+                task["status"],
+                task["summary"],
+                task["acceptance_criteria"],
+                task["target_area"],
+                task.get("execution_risk"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                timestamp,
+                timestamp,
+            ),
+        )
+        _insert_event(
+            connection,
+            task["id"],
+            "seeded",
+            f"Task {task['id']} seeded in status {task['status']}.",
+            timestamp,
+        )
+
+
+def _sync_catalog_metadata(connection: sqlite3.Connection) -> None:
+    for task in DEFAULT_TASKS:
+        connection.execute(
+            """
+            UPDATE tasks
+            SET title = ?,
+                kind = ?,
+                status = CASE
+                    WHEN tasks.status = 'backlog' AND ? = 'done' THEN 'done'
+                    ELSE tasks.status
+                END,
+                summary = ?,
+                acceptance_criteria = ?,
+                target_area = ?,
+                execution_risk = ?
+            WHERE id = ?
+            """,
+            (
+                task["title"],
+                task["kind"],
+                task["status"],
+                task["summary"],
+                task["acceptance_criteria"],
+                task["target_area"],
+                task.get("execution_risk"),
+                task["id"],
+            ),
+        )
+
+
+def _insert_event(
+    connection: sqlite3.Connection, task_id: str, event_type: str, message: str, created_at: str
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO events (task_id, event_type, message, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (task_id, event_type, message, created_at),
+    )
+
+
+def list_tasks() -> list[dict[str, Any]]:
     initialize_store()
     with get_connection() as connection:
         rows = connection.execute(
@@ -139,20 +200,20 @@ def list_tasks() -> list[dict]:
                 WHEN 'done' THEN 6
                 WHEN 'failed' THEN 7
                 ELSE 8
-            END, id
+            END, updated_at ASC, id
             """
         ).fetchall()
-        return [dict(row) for row in rows]
+    return [dict(row) for row in rows]
 
 
-def get_task(task_id: str) -> dict | None:
+def get_task(task_id: str) -> dict[str, Any] | None:
     initialize_store()
     with get_connection() as connection:
         row = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        return dict(row) if row else None
+    return dict(row) if row else None
 
 
-def list_recent_events(limit: int = 30) -> list[dict]:
+def list_recent_events(limit: int = 30) -> list[dict[str, Any]]:
     initialize_store()
     with get_connection() as connection:
         rows = connection.execute(
@@ -164,60 +225,125 @@ def list_recent_events(limit: int = 30) -> list[dict]:
             """,
             (limit,),
         ).fetchall()
-        return [dict(row) for row in rows]
+    return [dict(row) for row in rows]
 
 
 def move_task_to_ready(task_id: str) -> bool:
     task = get_task(task_id)
     if not task or task["status"] != "backlog":
         return False
-    update_task_status(task_id, "ready", "Task moved to Ready and waiting for the orchestrator.")
+    update_task(
+        task_id,
+        status="ready",
+        last_error=None,
+        event_type="ready",
+        event_message="Task moved to Ready and waiting for the orchestrator.",
+    )
     return True
 
 
-def update_task_status(task_id: str, status: str, message: str) -> None:
-    timestamp = utc_now()
+def claim_next_ready_task() -> dict[str, Any] | None:
+    initialize_store()
     with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM tasks
+            WHERE status = 'ready'
+            ORDER BY updated_at ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        if not row:
+            return None
+        task = dict(row)
+        timestamp = utc_now()
         connection.execute(
             """
             UPDATE tasks
-            SET status = ?, updated_at = ?
+            SET status = ?, updated_at = ?, last_error = NULL
             WHERE id = ?
             """,
-            (status, timestamp, task_id),
+            ("planning", timestamp, task["id"]),
         )
+        _insert_event(
+            connection,
+            task["id"],
+            "planning",
+            "Orchestrator claimed the task and started planning the execution run.",
+            timestamp,
+        )
+    task["status"] = "planning"
+    task["updated_at"] = timestamp
+    task["last_error"] = None
+    return task
+
+
+def claim_task(task_id: str) -> dict[str, Any] | None:
+    initialize_store()
+    with get_connection() as connection:
+        row = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not row or row["status"] != "ready":
+            return None
+        task = dict(row)
+        timestamp = utc_now()
         connection.execute(
             """
-            INSERT INTO events (task_id, event_type, message, created_at)
-            VALUES (?, ?, ?, ?)
+            UPDATE tasks
+            SET status = ?, updated_at = ?, last_error = NULL
+            WHERE id = ?
             """,
-            (task_id, status, message, timestamp),
+            ("planning", timestamp, task_id),
         )
+        _insert_event(
+            connection,
+            task_id,
+            "planning",
+            "Orchestrator claimed the task and started planning the execution run.",
+            timestamp,
+        )
+    task["status"] = "planning"
+    task["updated_at"] = timestamp
+    task["last_error"] = None
+    return task
 
 
-def progress_ready_tasks() -> list[dict]:
-    initialize_store()
-    transitioned: list[dict] = []
+def update_task(
+    task_id: str,
+    *,
+    event_type: str | None = None,
+    event_message: str | None = None,
+    **fields: Any,
+) -> None:
+    if not fields and not event_type:
+        return
+
+    timestamp = utc_now()
+    updates = dict(fields)
+    updates["updated_at"] = timestamp
+    columns = ", ".join(f"{column} = ?" for column in updates)
+    values = list(updates.values())
+
     with get_connection() as connection:
-        rows = connection.execute(
-            """
-            SELECT id, status
-            FROM tasks
-            WHERE status IN ('ready', 'planning', 'coding', 'testing', 'deploy')
-            ORDER BY updated_at ASC
-            """
-        ).fetchall()
+        connection.execute(f"UPDATE tasks SET {columns} WHERE id = ?", (*values, task_id))
+        if event_type and event_message:
+            _insert_event(connection, task_id, event_type, event_message, timestamp)
 
-    for row in rows:
-        next_status = TRANSITION_FLOW.get(row["status"])
-        if not next_status:
-            continue
-        message = (
-            f"Task advanced from {row['status']} to {next_status} by the local demo orchestrator."
-        )
-        update_task_status(row["id"], next_status, message)
-        transitioned.append({"task_id": row["id"], "from": row["status"], "to": next_status})
-    return transitioned
+
+def add_event(task_id: str, event_type: str, message: str) -> None:
+    timestamp = utc_now()
+    with get_connection() as connection:
+        _insert_event(connection, task_id, event_type, message, timestamp)
+
+
+def mark_task_failed(task_id: str, message: str) -> None:
+    update_task(
+        task_id,
+        status="failed",
+        last_error=message,
+        event_type="failed",
+        event_message=message,
+    )
 
 
 def build_status_summary() -> dict[str, int]:

@@ -81,6 +81,26 @@
         font-weight: 700;
         text-transform: uppercase;
       }
+      .risk {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .risk.safe {
+        background: rgba(112, 197, 159, 0.16);
+        color: var(--good);
+      }
+      .risk.medium {
+        background: rgba(240, 163, 76, 0.16);
+        color: var(--accent);
+      }
+      .risk.review {
+        background: rgba(243, 107, 107, 0.16);
+        color: var(--bad);
+      }
       .ready-button {
         border: none;
         border-radius: 999px;
@@ -118,13 +138,13 @@
     <header>
       <div>
         <h1>Control Room</h1>
-        <p>One screen that ties together intake, agent execution, CI/CD, and the live app.</p>
+        <p>One screen that ties together Kanboard intake, agent execution, CI/CD, and the live app.</p>
       </div>
       <div class="links">
         <a href="http://localhost:18000" target="_blank" rel="noreferrer">Pet App</a> ·
         <a href="http://localhost:18080" target="_blank" rel="noreferrer">Kanboard</a> ·
         <a href="http://localhost:13000" target="_blank" rel="noreferrer">Gitea</a> ·
-        <a href="http://localhost:19000" target="_blank" rel="noreferrer">Woodpecker</a>
+        <a href="http://localhost:13000/ilya/autonomous-coding-demo/actions" target="_blank" rel="noreferrer">Gitea Actions</a>
       </div>
     </header>
     <main>
@@ -140,7 +160,7 @@
       <section class="grid layout">
         <article class="panel">
           <h2>Pipeline Tasks</h2>
-          <p>Backlog items can be promoted to <strong>Ready</strong>. The local orchestrator then advances them through the demo pipeline.</p>
+          <p>Move a Kanboard card to <strong>Ready</strong>. The orchestrator mirrors it locally and advances it through the pipeline.</p>
           <table>
             <thead>
               <tr>
@@ -148,7 +168,9 @@
                 <th>Task</th>
                 <th>Status</th>
                 <th>Area</th>
-                <th>Action</th>
+                <th>Risk</th>
+                <th>Artifacts</th>
+                <th>Kanboard</th>
               </tr>
             </thead>
             <tbody>
@@ -162,14 +184,33 @@
                   <td><span class="status">{{ task.status }}</span></td>
                   <td>{{ task.target_area }}</td>
                   <td>
-                    {% if task.status == "backlog" %}
-                      <form method="post" action="/tasks/{{ task.id }}/ready">
-                        <button class="ready-button" type="submit">Send to Ready</button>
-                      </form>
+                    {% if task.execution_risk %}
+                      <span class="risk {{ task.execution_risk }}">{{ task.execution_risk }}</span>
                     {% else %}
-                      <small>{{ task.updated_at }}</small>
+                      <small class="muted">n/a</small>
                     {% endif %}
                   </td>
+                  <td>
+                    {% if task.branch_name %}
+                      <div><strong>Branch:</strong> {{ task.branch_name }}</div>
+                    {% endif %}
+                    {% if task.repo_link %}
+                      <div><a href="{{ task.repo_link }}" target="_blank" rel="noreferrer">Branch view</a></div>
+                    {% endif %}
+                    {% if task.ci_link %}
+                      <div><a href="{{ task.ci_link }}" target="_blank" rel="noreferrer">CI</a></div>
+                    {% endif %}
+                    {% if task.commit_sha %}
+                      <div><small>Task commit: {{ task.commit_sha[:12] }}</small></div>
+                    {% endif %}
+                    {% if task.live_commit_sha %}
+                      <div><small>Live commit: {{ task.live_commit_sha[:12] }}</small></div>
+                    {% endif %}
+                    {% if task.last_error %}
+                      <div><small style="color: var(--bad)">{{ task.last_error }}</small></div>
+                    {% endif %}
+                  </td>
+                  <td><small>Move card in Kanboard</small><br><small>{{ task.updated_at }}</small></td>
                 </tr>
               {% endfor %}
             </tbody>

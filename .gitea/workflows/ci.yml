@@ -1,0 +1,36 @@
+name: Demo CI
+
+on:
+  push:
+    branches:
+      - main
+      - codex/**
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Show Python version
+        run: python3 --version
+
+      - name: Install Python tooling
+        run: apt-get update && apt-get install -y python3-pip python3-venv
+
+      - name: Create CI virtual environment
+        run: python3 -m venv .venv-ci
+
+      - name: Install dependencies
+        run: |
+          . .venv-ci/bin/activate
+          pip install --upgrade pip
+          pip install ".[dev]"
+
+      - name: Run test suite
+        run: |
+          . .venv-ci/bin/activate
+          PYTHONPATH=. python -m pytest

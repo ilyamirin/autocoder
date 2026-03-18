@@ -1,11 +1,21 @@
 services:
   pet-app:
     build: .
-    command: uvicorn services.pet_app.app:app --host 0.0.0.0 --port 8000
+    command: >
+      /bin/sh -lc
+      "python /workspace/repo/scripts/bootstrap_live_worktree.py
+      && cd /workspace/repo/data/live_runtime
+      && uvicorn services.pet_app.app:app --app-dir /workspace/repo/data/live_runtime --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "${PET_APP_PORT:-18000}:8000"
     volumes:
       - ./data:/app/data
+      - .:/workspace/repo
+    environment:
+      DEMO_REPO_ROOT: /workspace/repo
+      EXECUTOR_BOOTSTRAP_BRANCH: ${EXECUTOR_BOOTSTRAP_BRANCH:-codex/development}
+      EXECUTOR_RUNTIME_BRANCH: ${EXECUTOR_RUNTIME_BRANCH:-codex/runtime}
+      LIVE_WORKTREE_PATH: /workspace/repo/data/live_runtime
 
   control-room:
     build: .
@@ -22,8 +32,41 @@ services:
     command: uvicorn services.orchestrator.app:app --host 0.0.0.0 --port 8020
     ports:
       - "${ORCHESTRATOR_PORT:-18020}:8020"
+    environment:
+      DEMO_REPO_ROOT: /workspace/repo
+      DEMO_WORKTREE_ROOT: /workspace/repo/data/worktrees
+      EXECUTOR_BOOTSTRAP_BRANCH: ${EXECUTOR_BOOTSTRAP_BRANCH:-codex/development}
+      EXECUTOR_RUNTIME_BRANCH: ${EXECUTOR_RUNTIME_BRANCH:-codex/runtime}
+      LIVE_WORKTREE_PATH: /workspace/repo/data/live_runtime
+      EXECUTOR_PUSH_ENABLED: ${EXECUTOR_PUSH_ENABLED:-true}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4}
+      MODEL_BASE_URL: ${MODEL_BASE_URL:-http://host.docker.internal:8000}
+      MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-medium}
+      MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-120}
+      GITEA_REPO_OWNER: ${GITEA_REPO_OWNER:-ilya}
+      GITEA_REPO_NAME: ${GITEA_REPO_NAME:-autonomous-coding-demo}
+      GITEA_PUSH_BASE_URL: ${GITEA_PUSH_BASE_URL:-http://gitea:3000}
+      GITEA_PUSH_USERNAME: ${GITEA_PUSH_USERNAME}
+      GITEA_PUSH_PASSWORD: ${GITEA_PUSH_PASSWORD}
+      GITEA_API_BASE_URL: ${GITEA_API_BASE_URL:-http://gitea:3000}
+      GITEA_HTTP_BASE_URL: ${GITEA_HTTP_BASE_URL:-http://localhost:13000}
+      CI_POLL_TIMEOUT_SECONDS: ${CI_POLL_TIMEOUT_SECONDS:-180}
+      CI_POLL_INTERVAL_SECONDS: ${CI_POLL_INTERVAL_SECONDS:-5}
+      KANBOARD_SYNC_ENABLED: ${KANBOARD_SYNC_ENABLED:-true}
+      KANBOARD_URL: ${KANBOARD_URL:-http://kanboard/jsonrpc.php}
+      KANBOARD_PROJECT_NAME: ${KANBOARD_PROJECT_NAME}
+      KANBOARD_ADMIN_USERNAME: ${KANBOARD_ADMIN_USERNAME}
+      KANBOARD_ADMIN_PASSWORD: ${KANBOARD_ADMIN_PASSWORD}
+      KANBOARD_API_USERNAME: ${KANBOARD_API_USERNAME}
+      KANBOARD_API_TOKEN: ${KANBOARD_API_TOKEN}
     volumes:
       - ./data:/app/data
+      - .:/workspace/repo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kanboard
+      - gitea
 
   kanboard:
     image: kanboard/kanboard:latest
@@ -56,44 +99,31 @@ services:
     environment:
       GITEA__database__DB_TYPE: sqlite3
       GITEA__database__PATH: /data/gitea/gitea.db
+      GITEA__actions__ENABLED: "true"
       GITEA__security__INSTALL_LOCK: "true"
       GITEA__server__ROOT_URL: http://localhost:${GITEA_HTTP_PORT:-13000}
       GITEA__server__SSH_PORT: ${GITEA_SSH_PORT:-12222}
       GITEA__service__DISABLE_REGISTRATION: "true"
       GITEA__webhook__ALLOWED_HOST_LIST: external,loopback
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN}
     ports:
       - "${GITEA_HTTP_PORT:-13000}:3000"
       - "${GITEA_SSH_PORT:-12222}:22"
     volumes:
       - ./data/gitea:/data
 
-  woodpecker-server:
-    image: woodpeckerci/woodpecker-server:v3
-    ports:
-      - "${WOODPECKER_HTTP_PORT:-19000}:8000"
+  gitea-actions-runner:
+    image: gitea/act_runner:latest
+    restart: unless-stopped
     environment:
-      WOODPECKER_OPEN: "true"
-      WOODPECKER_ADMIN: ${GITEA_ADMIN_USERNAME}
-      WOODPECKER_HOST: http://localhost:${WOODPECKER_HTTP_PORT:-19000}
-      WOODPECKER_DEV_OAUTH_HOST: http://localhost:${WOODPECKER_HTTP_PORT:-19000}
-      WOODPECKER_SERVER_ADDR: :8000
-      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
-      WOODPECKER_GITEA: "true"
-      WOODPECKER_GITEA_URL: http://gitea:3000
-      WOODPECKER_DEV_GITEA_OAUTH_URL: http://localhost:${GITEA_HTTP_PORT:-13000}
-      WOODPECKER_GITEA_CLIENT: ${WOODPECKER_GITEA_CLIENT}
-      WOODPECKER_GITEA_SECRET: ${WOODPECKER_GITEA_SECRET}
+      GITEA_INSTANCE_URL: http://host.docker.internal:${GITEA_HTTP_PORT:-13000}
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN}
+      GITEA_RUNNER_NAME: ${GITEA_RUNNER_NAME:-local-docker-runner}
+      GITEA_RUNNER_LABELS: ${GITEA_RUNNER_LABELS:-ubuntu-latest:docker://node:20-bookworm,ubuntu-22.04:docker://node:20-bookworm}
+    volumes:
+      - ./data/act_runner:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - gitea
-
-  woodpecker-agent:
-    image: woodpeckerci/woodpecker-agent:v3
-    command: agent
-    environment:
-      WOODPECKER_SERVER: woodpecker-server:9000
-      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
-      WOODPECKER_BACKEND_DOCKER_NETWORK: autocoder_example_default
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      - woodpecker-server
