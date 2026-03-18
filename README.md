@@ -121,6 +121,15 @@ A dedicated secret scan script is run before each commit.
 Git operations inside the executor are protected by a small safety helper so
 stale `.lock` files do not break autonomous runs.
 
+## License
+
+This repository's original code is licensed under the MIT License. See
+[LICENSE](LICENSE).
+
+Third-party software used by this project, including Kanboard, Gitea, Gitea
+`act_runner`, Python, and Python package dependencies, remains under each
+component's own license. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
 ## Test Notes
 
 Do not run bare `pytest` from the repository root after the live runtime or
