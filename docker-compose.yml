@@ -34,6 +34,21 @@ services:
       - ./data/kanboard/plugins:/var/www/app/plugins
       - ./data/kanboard/ssl:/etc/nginx/ssl
 
+  kanboard-seed:
+    build: .
+    command: python scripts/seed_kanboard.py
+    environment:
+      KANBOARD_URL: http://kanboard/jsonrpc.php
+      KANBOARD_API_USERNAME: ${KANBOARD_API_USERNAME}
+      KANBOARD_API_TOKEN: ${KANBOARD_API_TOKEN}
+      KANBOARD_PROJECT_NAME: ${KANBOARD_PROJECT_NAME}
+      KANBOARD_DEMO_USER_USERNAME: ${KANBOARD_DEMO_USER_USERNAME}
+      KANBOARD_DEMO_USER_PASSWORD: ${KANBOARD_DEMO_USER_PASSWORD}
+      KANBOARD_DEMO_USER_NAME: ${KANBOARD_DEMO_USER_NAME}
+      KANBOARD_DEMO_USER_EMAIL: ${KANBOARD_DEMO_USER_EMAIL}
+    depends_on:
+      - kanboard
+
   gitea:
     image: gitea/gitea:1.24.6
     ports:

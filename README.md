@@ -26,6 +26,14 @@ The first implementation milestone focuses on local reproducibility and
 observability. External integrations with Kanboard, Gitea, and Woodpecker are
 introduced progressively rather than hidden behind a large opaque bootstrap.
 
+## Current Milestones Implemented
+
+- repository scaffold with staged implementation plan
+- FastAPI services for `pet-app`, `control-room`, and `orchestrator`
+- shared SQLite-backed demo task store with seeded backlog and done tasks
+- Kanboard seed script that creates the project, user, columns, and cards
+- minimal `Woodpecker` pipeline for running `pytest`
+
 ## Development
 
 1. Copy `.env.example` to `.env`
