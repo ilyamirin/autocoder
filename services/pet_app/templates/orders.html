@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="hero">
+    <span class="badge">Orders</span>
+    <h1>Recent seller orders</h1>
+    <p>These rows intentionally support future demo tasks like sorting, filtering, and export.</p>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Order</th>
+        <th>Date</th>
+        <th>Product</th>
+        <th>Brand</th>
+        <th>Status</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in orders %}
+        <tr>
+          <td>{{ order.id }}</td>
+          <td>{{ order.date }}</td>
+          <td>{{ order.product }}</td>
+          <td>{{ order.brand }}</td>
+          <td>{{ order.status }}</td>
+          <td>{{ order.total }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

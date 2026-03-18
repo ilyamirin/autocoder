@@ -7,14 +7,14 @@ name = "autonomous-coding-demo"
 version = "0.1.0"
 description = "Autonomous coding demo stack with Kanboard, Gitea, Woodpecker, and FastAPI services."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 dependencies = [
   "fastapi>=0.116.0,<1.0.0",
   "httpx>=0.28.0,<1.0.0",
   "jinja2>=3.1.0,<4.0.0",
   "pydantic>=2.11.0,<3.0.0",
   "pydantic-settings>=2.10.0,<3.0.0",
-  "uvicorn[standard]>=0.35.0,<1.0.0",
+  "uvicorn>=0.35.0,<1.0.0",
 ]
 
 [project.optional-dependencies]

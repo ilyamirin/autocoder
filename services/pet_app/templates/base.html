@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Seller Desk</title>
+    <style>
+      :root {
+        --bg: #f5f1e8;
+        --panel: #fffdf8;
+        --ink: #1f2a33;
+        --muted: #5a6a73;
+        --accent: #d2643f;
+        --accent-soft: #f4d6cb;
+        --border: #d8cdbf;
+        --good: #2d6a4f;
+        --bad: #b23a48;
+      }
+      body {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(210, 100, 63, 0.12), transparent 28%),
+          linear-gradient(180deg, #f7f2e8 0%, #f2ede4 100%);
+      }
+      header {
+        padding: 24px 40px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .brand {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .brand strong {
+        font-size: 28px;
+      }
+      .brand span {
+        color: var(--muted);
+      }
+      nav {
+        display: flex;
+        gap: 12px;
+      }
+      nav a {
+        text-decoration: none;
+        color: var(--ink);
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+      }
+      nav a.active {
+        background: var(--panel);
+        border-color: var(--border);
+      }
+      main {
+        padding: 0 40px 40px;
+      }
+      .hero {
+        margin-bottom: 24px;
+      }
+      .hero h1 {
+        margin: 0 0 8px;
+        font-size: 36px;
+      }
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      .card, table {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: 0 18px 40px rgba(102, 88, 72, 0.08);
+      }
+      .card {
+        padding: 18px;
+      }
+      .metric-label {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .metric-value {
+        margin-top: 10px;
+        font-size: 28px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+      }
+      th, td {
+        text-align: left;
+        padding: 14px 16px;
+        border-bottom: 1px solid #eee4d8;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .negative {
+        color: var(--bad);
+        font-weight: 700;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .section-title {
+        margin: 26px 0 12px;
+        font-size: 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <strong>Seller Desk</strong>
+        <span>Compact seller operations cockpit for the agent demo</span>
+      </div>
+      <nav>
+        <a href="/" class="{% if page == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/orders" class="{% if page == 'orders' %}active{% endif %}">Orders</a>
+        <a href="/products" class="{% if page == 'products' %}active{% endif %}">Products</a>
+      </nav>
+    </header>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

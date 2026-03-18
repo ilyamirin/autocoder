@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="hero">
+    <span class="badge">Live demo app</span>
+    <h1>Seller performance at a glance</h1>
+    <p>The app is intentionally small but rich enough to produce visible fixes, metrics shifts, and deploy results.</p>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <div class="metric-label">Gross revenue</div>
+      <div class="metric-value">{{ metrics.gross_revenue }}</div>
+    </article>
+    <article class="card">
+      <div class="metric-label">Net revenue</div>
+      <div class="metric-value">{{ metrics.net_revenue }}</div>
+    </article>
+    <article class="card">
+      <div class="metric-label">Return rate</div>
+      <div class="metric-value">{{ metrics.return_rate }}%</div>
+    </article>
+    <article class="card">
+      <div class="metric-label">Orders in seed set</div>
+      <div class="metric-value">{{ metrics.order_count }}</div>
+    </article>
+  </section>
+
+  <h2 class="section-title">Low stock products</h2>
+  <section class="grid">
+    {% for product in metrics.low_stock %}
+      <article class="card">
+        <div class="metric-label">{{ product.brand }}</div>
+        <div class="metric-value">{{ product.name }}</div>
+        <div class="muted">Stock: {{ product.stock }}</div>
+      </article>
+    {% endfor %}
+  </section>
+
+  <h2 class="section-title">Top delivered products</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th>Delivered orders</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for product_name, delivered_count in metrics.top_products %}
+        <tr>
+          <td>{{ product_name }}</td>
+          <td>{{ delivered_count }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

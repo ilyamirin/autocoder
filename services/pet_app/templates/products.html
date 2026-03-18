@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="hero">
+    <span class="badge">Products</span>
+    <h1>Stock and margin overview</h1>
+    <p>Low-stock and negative-margin products are useful for visually obvious demo fixes.</p>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>SKU</th>
+        <th>Name</th>
+        <th>Brand</th>
+        <th>Stock</th>
+        <th>Margin %</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for product in products %}
+        <tr>
+          <td>{{ product.sku }}</td>
+          <td>{{ product.name }}</td>
+          <td>{{ product.brand }}</td>
+          <td>{{ product.stock }}</td>
+          <td class="{% if product.margin_pct < 0 %}negative{% endif %}">
+            {{ product.margin_pct }}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
