@@ -70,17 +70,10 @@ services:
 
   kanboard:
     image: kanboard/kanboard:latest
-    entrypoint: >
-      /bin/sh -lc
-      "mkdir -p /var/www/app/plugins/GcgTheme
-      && cp -R /opt/kanboard-plugins/GcgTheme/. /var/www/app/plugins/GcgTheme
-      && exec /usr/local/bin/entrypoint.sh"
     ports:
       - "${KANBOARD_HTTP_PORT:-18080}:80"
     volumes:
       - ./data/kanboard:/var/www/app/data
-      - ./data/kanboard/plugins:/var/www/app/plugins
-      - ./infra/kanboard/plugins:/opt/kanboard-plugins:ro
       - ./data/kanboard/ssl:/etc/nginx/ssl
 
   kanboard-seed:

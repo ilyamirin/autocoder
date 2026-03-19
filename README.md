@@ -59,7 +59,6 @@ badge on the live `/products` page.
 - `control-room`: pipeline status dashboard
 - `orchestrator`: task lifecycle engine and autonomous executor
 - `kanboard`: task board and user-facing intake
-  - includes the repo-local `GcgTheme` plugin for the golden-canon-inspired board layout
 - `gitea`: repository hosting and PR UI
 - `gitea-actions-runner`: executes Gitea Actions jobs in Docker
 
@@ -109,20 +108,10 @@ PYTHONPATH=. .venv/bin/python scripts/run_executor_once.py --task-id BL-001 --fo
 - the demo services share state through `data/demo.db`
 - `control-room` links out to `Kanboard`, `Gitea`, `Gitea Actions`, and the live `pet-app`
 - `kanboard-seed` uses JSON-RPC against `http://kanboard/jsonrpc.php`
-- `kanboard` loads the repo-local theme plugin from `infra/kanboard/plugins/GcgTheme`
 - `gitea-actions-runner` registers itself with the static instance token exposed by `Gitea`
 - the runner and action job containers reach the local forge through `http://host.docker.internal:13000`
 - the orchestrator bind-mounts the repo, creates task worktrees in `data/worktrees`, and manages the live runtime worktree in `data/live_runtime`
 - the orchestrator reaches the host model service through `host.docker.internal`
-
-## Kanboard Theme
-
-Kanboard is styled through a repo-local plugin instead of a core fork:
-
-- plugin path: `infra/kanboard/plugins/GcgTheme`
-- copied into the writable Kanboard plugin directory on container start
-- injects a custom CSS layer plus login and header overrides
-- keeps the Kanboard upgrade surface small while giving the board an editorial GCG-inspired layout
 
 ## Safety
 
