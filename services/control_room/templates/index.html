@@ -139,6 +139,7 @@
       <div>
         <h1>Control Room</h1>
         <p>One screen that ties together Kanboard intake, agent execution, CI/CD, and the live app.</p>
+        <p><small>Auto-refresh: every 3 seconds</small></p>
       </div>
       <div class="links">
         <a href="http://localhost:18000" target="_blank" rel="noreferrer">Pet App</a> ·
@@ -196,6 +197,8 @@
                     {% endif %}
                     {% if task.repo_link %}
                       <div><a href="{{ task.repo_link }}" target="_blank" rel="noreferrer">Branch view</a></div>
+                    {% elif task.branch_name %}
+                      <div><small>Branch view: local worktree only</small></div>
                     {% endif %}
                     {% if task.ci_link %}
                       <div><a href="{{ task.ci_link }}" target="_blank" rel="noreferrer">CI</a></div>
@@ -230,5 +233,8 @@
         </aside>
       </section>
     </main>
+    <script>
+      window.setTimeout(() => window.location.reload(), 3000);
+    </script>
   </body>
 </html>

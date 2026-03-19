@@ -234,13 +234,12 @@ class TaskExecutor:
         try:
             ensure_live_worktree(self._live_runtime)
             worktree_path, branch_name = self._create_worktree(task["id"])
-            repo_link = self._repo_link(branch_name)
             ci_link = self._ci_link()
             self._update_task(
                 task["id"],
                 status="coding",
                 branch_name=branch_name,
-                repo_link=repo_link,
+                repo_link=None,
                 ci_link=ci_link,
                 worktree_path=str(worktree_path),
                 event_type="coding",
@@ -265,7 +264,7 @@ class TaskExecutor:
             self._update_task(
                 task["id"],
                 commit_sha=commit_sha,
-                repo_link=repo_link,
+                repo_link=self._repo_link(branch_name),
                 ci_link=ci_link,
                 event_type="commit",
                 event_message=f"Committed changes as {commit_sha[:7]} and pushed branch {branch_name}.",
