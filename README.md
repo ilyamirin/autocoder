@@ -93,6 +93,61 @@ For isolated local runs without waiting for the compose orchestrator:
 PYTHONPATH=. .venv/bin/python scripts/run_executor_once.py --task-id BL-001 --force-ready
 ```
 
+## Infrastructure Sizing
+
+If `aider` is configured to use `OpenRouter` or another external model
+provider, this stack does not require a local GPU. The server-side load comes
+from local tests, `Gitea Actions`, git worktrees, logs, and disk I/O rather
+than model inference.
+
+### Current Runtime Characteristics
+
+- the current orchestrator executes one claimed task at a time
+- each task creates a dedicated worktree
+- CI jobs run through `Gitea Actions` and consume the same host resources
+- the demo stack currently uses local `SQLite` files, which is acceptable for a
+  demo but not ideal for a multi-user long-running environment
+
+### Recommended Starting Point
+
+For a small operator team of roughly `5-7` people creating about `5-6` tasks
+per day, start with:
+
+- `8 vCPU`
+- `16 GB RAM`
+- `300-500 GB NVMe SSD`
+- `Ubuntu 24.04 LTS`
+- no GPU
+
+This is a good fit when the autonomous pipeline is mostly processing one active
+task at a time and the target repository has moderate test and build cost.
+
+### Comfortable Capacity
+
+If the educational portal repository grows to include heavier frontend builds,
+backend services, larger test suites, or you want headroom for overlapping CI
+activity, use:
+
+- `12-16 vCPU`
+- `32 GB RAM`
+- `500 GB NVMe SSD`
+- no GPU
+
+This is the recommended production-oriented starting point for a real team,
+even if daily ticket volume is still moderate.
+
+### Database Recommendation
+
+Before relying on the system for ongoing team work, move persistent services off
+`SQLite`:
+
+- use `PostgreSQL` for `Gitea`
+- use `PostgreSQL` for the internal control-room and orchestrator store
+
+`SQLite` is convenient for the demo, but the first operational bottlenecks for
+this architecture are more likely to be database concurrency, CI contention,
+and disk I/O than raw CPU.
+
 ## Port Map
 
 - `18000` -> `pet-app:8000`
@@ -127,8 +182,12 @@ This repository's original code is licensed under the MIT License. See
 [LICENSE](LICENSE).
 
 Third-party software used by this project, including Kanboard, Gitea, Gitea
-`act_runner`, Python, and Python package dependencies, remains under each
-component's own license. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+`act_runner`, optional `aider` usage, Python, and Python package dependencies,
+remains under each component's own license. In particular, `aider` is
+`Apache-2.0` licensed and is compatible to use alongside this repository
+without changing the repository's own `MIT` license, as long as upstream
+third-party notices are preserved when redistributed. See
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## Test Notes
 

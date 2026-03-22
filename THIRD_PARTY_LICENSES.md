@@ -16,6 +16,7 @@ upstream license terms for the exact versions you ship.
 | Kanboard | `docker-compose.yml` service `kanboard` | MIT |
 | Gitea | `docker-compose.yml` service `gitea` | MIT |
 | Gitea `act_runner` | `docker-compose.yml` service `gitea-actions-runner` | MIT |
+| aider | Optional external coding assistant tooling used alongside this repository | Apache-2.0 |
 | Python | Base runtime and local tooling | PSF License |
 | FastAPI | Python dependency | MIT |
 | HTTPX | Python dependency | BSD-3-Clause |
@@ -28,7 +29,12 @@ upstream license terms for the exact versions you ship.
 ## Notes
 
 - The `MIT` license for this repository does not relicense Kanboard, Gitea,
-  `act_runner`, Python, or any Python package dependency.
+  `act_runner`, `aider`, Python, or any Python package dependency.
+- If `aider` is used with this repository, the repository can remain `MIT`
+  licensed while `aider` continues to be distributed under `Apache-2.0`.
+- If you redistribute `aider` together with this project, preserve the upstream
+  `Apache-2.0` license text and any required attribution or notice files for
+  the version you ship.
 - If you distribute only this repository's source code, `LICENSE` is normally
   sufficient for your original work, while this file provides attribution and
   clarity about embedded dependencies.
@@ -42,6 +48,7 @@ upstream license terms for the exact versions you ship.
 - Kanboard: <https://github.com/kanboard/kanboard>
 - Gitea: <https://github.com/go-gitea/gitea>
 - Gitea `act_runner`: <https://gitea.com/gitea/act_runner>
+- aider: <https://github.com/Aider-AI/aider>
 - Python: <https://github.com/python/cpython>
 - FastAPI: <https://github.com/fastapi/fastapi>
 - HTTPX: <https://github.com/encode/httpx>
