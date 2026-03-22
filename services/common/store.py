@@ -143,6 +143,48 @@ def _seed_tasks(connection: sqlite3.Connection) -> None:
 
 def _sync_catalog_metadata(connection: sqlite3.Connection) -> None:
     for task in DEFAULT_TASKS:
+        existing = connection.execute(
+            "SELECT id FROM tasks WHERE id = ?",
+            (task["id"],),
+        ).fetchone()
+        if not existing:
+            timestamp = utc_now()
+            connection.execute(
+                """
+                INSERT INTO tasks (
+                    id, title, kind, status, summary, acceptance_criteria,
+                    target_area, execution_risk, branch_name, repo_link, ci_link, commit_sha,
+                    worktree_path, last_error, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task["id"],
+                    task["title"],
+                    task["kind"],
+                    task["status"],
+                    task["summary"],
+                    task["acceptance_criteria"],
+                    task["target_area"],
+                    task.get("execution_risk"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            _insert_event(
+                connection,
+                task["id"],
+                "seeded",
+                f"Task {task['id']} seeded in status {task['status']}.",
+                timestamp,
+            )
+            continue
         connection.execute(
             """
             UPDATE tasks
