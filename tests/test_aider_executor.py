@@ -1,11 +1,36 @@
 from pathlib import Path
 
+from services.orchestrator.agent_policy import load_agent_policy
 from services.orchestrator.task_executor import AiderClient, ExecutorConfig, TaskProfile
+
+
+def _policy_path(repo_root: Path) -> Path:
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    policy_path = docs_dir / "AGENT_POLICY.md"
+    policy_path.write_text(
+        "\n".join(
+            [
+                "# Agent Policy",
+                "",
+                "## Global",
+                "- instruction: Prefer the smallest patch.",
+                "- instruction: Update only affected tests.",
+                "",
+                "## Area: data",
+                "- instruction: Add the minimum number of new records necessary.",
+                "- soft_limit.max_expected_new_records: 2",
+                "",
+            ]
+        )
+    )
+    return policy_path
 
 
 def _config(tmp_path: Path) -> ExecutorConfig:
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True)
+    policy_path = _policy_path(repo_root)
     return ExecutorConfig(
         repo_root=repo_root,
         worktree_root=repo_root / "data" / "worktrees",
@@ -26,6 +51,7 @@ def _config(tmp_path: Path) -> ExecutorConfig:
         coding_log_completions=True,
         coding_show_model_warnings=False,
         coding_check_model_accepts_settings=False,
+        agent_policy_path=policy_path,
         push_enabled=False,
         gitea_owner="ilya",
         gitea_repo="autonomous-coding-demo",
@@ -40,7 +66,8 @@ def _config(tmp_path: Path) -> ExecutorConfig:
 
 
 def test_aider_prompt_includes_failure_context(tmp_path: Path) -> None:
-    client = AiderClient(_config(tmp_path))
+    config = _config(tmp_path)
+    client = AiderClient(config, load_agent_policy(config.agent_policy_path))
     profile = TaskProfile(
         allowed_files=("services/pet_app/domain.py", "tests/test_pet_app.py"),
         test_args=("-m", "pytest", "tests/test_pet_app.py"),
@@ -49,6 +76,7 @@ def test_aider_prompt_includes_failure_context(tmp_path: Path) -> None:
         "id": "BL-009",
         "title": "Обогатить тестовые данные",
         "kind": "quality",
+        "target_area": "data",
         "summary": "Добавить больше returned и cancelled кейсов.",
         "acceptance_criteria": "Тесты зелёные.",
         "last_error": "AssertionError: expected 6 orders, got 8",
@@ -61,10 +89,13 @@ def test_aider_prompt_includes_failure_context(tmp_path: Path) -> None:
     assert "Internal refinement budget: up to 5 passes." in prompt
     assert "Do not narrate shell commands" in prompt
     assert "Run the required local test command" not in prompt
+    assert "Prefer the smallest patch." in prompt
+    assert "Add the minimum number of new records necessary." in prompt
 
 
 def test_aider_command_uses_non_interactive_safe_flags(tmp_path: Path) -> None:
-    client = AiderClient(_config(tmp_path))
+    config = _config(tmp_path)
+    client = AiderClient(config, load_agent_policy(config.agent_policy_path))
     profile = TaskProfile(
         allowed_files=("services/pet_app/domain.py", "tests/test_pet_app.py"),
         test_args=("-m", "pytest", "tests/test_pet_app.py"),
@@ -96,9 +127,34 @@ def test_aider_command_uses_non_interactive_safe_flags(tmp_path: Path) -> None:
 
 
 def test_aider_run_root_is_created_under_generic_log_root(tmp_path: Path) -> None:
-    client = AiderClient(_config(tmp_path))
+    config = _config(tmp_path)
+    client = AiderClient(config, load_agent_policy(config.agent_policy_path))
 
     run_root = client._prepare_run_root("BL-001")
 
     assert run_root.exists()
     assert run_root.parent == tmp_path / "repo" / "data" / "aider" / "runs"
+
+
+def test_agent_policy_markdown_is_parsed_for_area_metadata(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    policy = load_agent_policy(config.agent_policy_path)
+
+    assert policy.global_instructions == (
+        "Prefer the smallest patch.",
+        "Update only affected tests.",
+    )
+    assert policy.instructions_for_area("data")[-1] == "Add the minimum number of new records necessary."
+    assert policy.metadata_for_area("data")["soft_limit.max_expected_new_records"] == "2"
+
+
+def test_executor_config_defaults_agent_policy_to_repo_docs(monkeypatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True)
+    monkeypatch.setenv("DEMO_REPO_ROOT", str(repo_root))
+    monkeypatch.delenv("AGENT_POLICY_PATH", raising=False)
+
+    config = ExecutorConfig.from_env()
+
+    assert config.agent_policy_path == repo_root / "docs" / "AGENT_POLICY.md"

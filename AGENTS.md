@@ -11,6 +11,7 @@ operator-facing demo, not as a generic app repo.
 - OpenRouter credentials and global coding-agent settings live in project `.env`
 - the coding agent is `aider`, launched directly by the orchestrator, and it
   writes logs under `data/aider`
+- task-level coding heuristics and guardrails live in `docs/AGENT_POLICY.md`
 - `aider` is run in strict `diff` edit mode and must not change `.gitignore`
 
 ## Git Workflow
@@ -62,3 +63,4 @@ the same task:
 - branch or runtime model
 - task lifecycle semantics
 - testing commands
+- coding-agent guardrails and policy rules

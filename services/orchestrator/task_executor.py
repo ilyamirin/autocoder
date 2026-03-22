@@ -18,6 +18,7 @@ from services.common.git_safety import GitSafetyError, normalize_worktree_gitdir
 from services.common.kanboard import KanboardSync
 from services.common.live_runtime import LiveRuntimeConfig, ensure_live_worktree, promote_commit_to_live
 from services.common.store import add_event, mark_task_failed, update_task
+from services.orchestrator.agent_policy import AgentPolicy, load_agent_policy
 
 
 class TaskExecutionError(RuntimeError):
@@ -103,6 +104,7 @@ class ExecutorConfig:
     coding_log_completions: bool
     coding_show_model_warnings: bool
     coding_check_model_accepts_settings: bool
+    agent_policy_path: Path
     push_enabled: bool
     gitea_owner: str
     gitea_repo: str
@@ -150,6 +152,9 @@ class ExecutorConfig:
                 "CODING_CHECK_MODEL_ACCEPTS_SETTINGS", "false"
             ).lower()
             == "true",
+            agent_policy_path=Path(
+                os.getenv("AGENT_POLICY_PATH", repo_root / "docs" / "AGENT_POLICY.md")
+            ).resolve(),
             push_enabled=os.getenv("EXECUTOR_PUSH_ENABLED", "true").lower() == "true",
             gitea_owner=os.getenv("GITEA_REPO_OWNER", "ilya"),
             gitea_repo=os.getenv("GITEA_REPO_NAME", "autonomous-coding-demo"),
@@ -164,8 +169,9 @@ class ExecutorConfig:
 
 
 class AiderClient:
-    def __init__(self, config: ExecutorConfig) -> None:
+    def __init__(self, config: ExecutorConfig, policy: AgentPolicy) -> None:
         self._config = config
+        self._policy = policy
 
     def run_task(self, task: dict[str, Any], profile: TaskProfile, worktree_path: Path) -> dict[str, Any]:
         run_root = self._prepare_run_root(task["id"])
@@ -267,6 +273,12 @@ class AiderClient:
                 *[f"- {path}" for path in profile.allowed_files],
                 "",
                 f"Required test command: {shlex.join(self._test_command(profile))}",
+                "",
+                "Policy instructions:",
+                *[
+                    f"- {instruction}"
+                    for instruction in self._policy.instructions_for_area(task["target_area"])
+                ],
                 "",
                 "Suggested first steps:",
                 "1. Read the allowed files using the exact relative paths listed below.",
@@ -388,7 +400,8 @@ class TaskExecutor:
         kanboard_sync: KanboardSync | None = None,
     ) -> None:
         self._config = config or ExecutorConfig.from_env()
-        self._model_client = model_client or AiderClient(self._config)
+        self._policy = load_agent_policy(self._config.agent_policy_path)
+        self._model_client = model_client or AiderClient(self._config, self._policy)
         self._kanboard_sync = kanboard_sync
         self._live_runtime = LiveRuntimeConfig(
             repo_root=self._config.repo_root,
