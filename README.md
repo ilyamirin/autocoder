@@ -1,67 +1,165 @@
 # Autonomous Coding Demo
 
-Docker Compose prototype for an autonomous coding pipeline:
+Live demo автономного coding loop, собранного в одном `docker compose`.
 
-- `Kanboard` as the task tracker
-- `Gitea` for git hosting and PR visibility
-- `Gitea Actions` for CI/CD
-- `orchestrator` as the pipeline state machine
-- `control-room` as the unified operator dashboard
-- `pet-app` as the target application agents improve
+Это не абстрактный toy-проект. Репозиторий сделан как уменьшенная и
+обезличенная демонстрация реального проприетарного контура агентной разработки:
+человеческий intake задачи, автоматическое исполнение, независимая проверка и
+видимый deploy-результат в живом приложении.
 
-The pet app is a compact seller operations dashboard that acts as a reduced
-copy of an e-commerce seller back office. It is intentionally small but rich
-enough to produce visible bugs, fixes, tests, and deployments.
+В демо сохранена архитектурная суть реального проекта, но убраны закрытые
+детали доменной модели, инфраструктуры и продуктовых данных.
 
-## What Works Now
+## Что Это
+
+Платформа показывает полный путь задачи:
+
+`Kanboard -> orchestrator -> aider -> local tests -> Gitea Actions -> live pet-app`
+
+Система не ограничивается “агент что-то предложил”. Здесь видно весь
+инженерный контур:
+
+- задача берётся с живой Kanban-доски
+- под задачу создаётся отдельный `git worktree`
+- агент реально меняет код в отдельной ветке
+- изменения прогоняются локальными тестами
+- ветка уходит в `Gitea`
+- `Gitea Actions` независимо проверяет результат
+- успешный commit промоутится в live runtime
+- изменение становится видно в браузере
+
+## На Что Опирается Демо
+
+Целевой `pet-app` здесь специально маленький: это seller operations dashboard,
+уменьшенная копия e-commerce backoffice. Он достаточно реалистичен, чтобы:
+
+- показывать KPI
+- иметь таблицы заказов и товаров
+- содержать доменную логику
+- позволять агенту чинить баги и добавлять маленькие фичи
+- давать видимый результат после deploy
+
+Именно поэтому демо выглядит как настоящий операторский workflow, а не как чат
+с агентом поверх тестового `todo app`.
+
+## Ключевые Фишки
+
+- весь стек поднимается одной командой: `docker compose up --build -d`
+- `Kanboard` является человеческой точкой входа
+- `orchestrator` сам claim-ит задачи из `Ready`
+- под каждую задачу создаётся отдельный `git worktree`
+- coding engine сейчас: `aider`
+- `aider` работает через `OpenRouter`
+- правила поведения агента лежат в одном versioned файле:
+  [`docs/AGENT_POLICY.md`](docs/AGENT_POLICY.md)
+- агент ограничен execution profile и write-scope по area
+- после успеха ветка проходит через `Gitea Actions`
+- live `pet-app` реально обслуживается из `data/live_runtime`
+- completed и failed задачи не скрываются с доски, а остаются видимыми
+
+## Что Уже Работает
 
 - full stack runs in one `docker compose`
-- `Kanboard` is the human task intake and status board
-- `orchestrator` claims `Ready` tasks from `Kanboard`
-- the executor creates a dedicated `git worktree` and `codex/...` branch per run
-- the coding agent runs through `aider` in the existing orchestrator container and edits only whitelisted files
-- the executor runs local tests, pushes to `Gitea`, waits for `Gitea Actions`, and promotes successful changes into the live runtime branch
-- the running `pet-app` serves code from the live runtime worktree, so successful tasks become visible in the browser
-- completed tasks remain visible in the `Done` column in `Kanboard`
+- `Kanboard` используется как human intake и status board
+- `orchestrator` синхронизируется с `Kanboard` и забирает `Ready` задачи
+- executor создаёт отдельную task branch под каждую попытку
+- `aider` запускается прямо внутри `orchestrator`, без отдельного agent-container
+- `aider` редактирует только whitelisted файлы в рамках area profile
+- локальные тесты и `Gitea Actions` работают как независимые ступени проверки
+- успешные изменения промоутятся в live runtime checkout
+- live `pet-app` показывает результат в браузере
+
+Проверенный живой сценарий:
+
+- `BL-014` `Исправить долю возвратов только локальной доменной правкой`
+  уже прошёл полный e2e:
+  `Kanboard -> aider -> local tests -> Gitea Actions -> live promote -> Done`
+
+## Архитектура Сервисов
+
+- `pet-app`: целевое demo-приложение
+- `control-room`: обзорный UI по pipeline, branch, commit, CI и live runtime
+- `orchestrator`: state machine и исполнитель task lifecycle
+- `aider`: coding engine, запускаемый как subprocess внутри `orchestrator`
+- `kanboard`: task intake и человеко-видимый board
+- `gitea`: git hosting, branch visibility, repo UI
+- `gitea-actions-runner`: независимый CI runner
+
+## Реальный Workflow
+
+```text
+Kanboard Backlog
+  -> Ready
+  -> orchestrator claim
+  -> git worktree + task branch
+  -> aider edits code
+  -> local pytest
+  -> commit + push to Gitea
+  -> Gitea Actions
+  -> promote to codex/runtime
+  -> live pet-app updated
+  -> Kanboard Done / Failed
+```
+
+Важно:
+
+- `main` не является обязательным deploy-источником
+- live deploy сейчас идёт через `codex/runtime`
+- task branches вида `codex/<task-id>-<suffix>` нужны для изоляции, diff и CI
+
+## Agent Execution
+
+- `aider` использует глобальные `CODING_*` настройки из `.env`
+- модель по умолчанию: `openrouter/qwen/qwen3-coder-plus`
+- `reasoning_effort`: `medium`
+- `extended_thinking_budget`: `200000`
+- `critic_max_iterations`: `5`
+- `aider` работает в strict `diff` mode
+- `.gitignore` агент не мутирует
+- логи и LLM history пишутся в `data/aider`
+
+Поведение агента задаётся не размазанными prompt-строками, а единым
+политическим документом:
+
+- [`docs/AGENT_POLICY.md`](docs/AGENT_POLICY.md)
+
+Именно этот файл определяет:
+
+- глобальные правила минимального патча
+- area-specific heuristics
+- soft limits и guardrails
+
+## Manual Demo Flow
+
+1. Открыть `Kanboard`
+2. Перевести backlog-карточку в `Ready`
+3. Следить за pipeline в `Control Room`
+4. Смотреть branch и CI в `Gitea`
+5. После `Done` проверить изменение в live `pet-app`
+
+Хорошие карточки для ручного прогона:
+
+- `BL-014` `Исправить долю возвратов только локальной доменной правкой`
+- `BL-013` `Минимально обогатить данные возвратов без изменения расчётов`
+- `BL-015` `Показать low stock без новых компонентов и API`
+- `BL-016` `Добавить live build badge минимальным platform-патчем`
 
 ## Development
 
-1. Copy `.env.example` to `.env`
-2. Fill the placeholder values
-3. Build and run the stack:
+1. Скопировать `.env.example` в `.env`
+2. Заполнить placeholder values
+3. Поднять стек:
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-The repository is developed with local Homebrew Python 3.12 and a local virtual
-environment:
+Локальная разработка ведётся через Homebrew Python 3.12 и project venv:
 
 ```bash
 python3.12 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 ```
-
-## Manual Demo Flow
-
-1. Open `Kanboard`
-2. Move a backlog task into `Ready`
-3. Wait for `orchestrator` to claim it and move it through `Planning`, `Coding`, `Testing`, `Deploy`, and `Done`
-4. Watch branch, commit, and CI status in `Gitea`
-5. Refresh the live `pet-app` and verify the change in the browser
-
-The currently verified end-to-end task is `BL-008`, which adds a visible `Low stock`
-badge on the live `/products` page.
-
-## Services
-
-- `pet-app`: seller dashboard demo application
-- `control-room`: pipeline status dashboard
-- `orchestrator`: task lifecycle engine and autonomous executor
-- `aider`: invoked directly by the orchestrator inside each task worktree
-- `kanboard`: task board and user-facing intake
-- `gitea`: repository hosting and PR UI
-- `gitea-actions-runner`: executes Gitea Actions jobs in Docker
 
 ## Default URLs
 
@@ -70,87 +168,13 @@ badge on the live `/products` page.
 - `orchestrator`: [http://localhost:18020](http://localhost:18020)
 - `kanboard`: [http://localhost:18080](http://localhost:18080)
 - `gitea`: [http://localhost:13000](http://localhost:13000)
+- `gitea actions`: [http://localhost:13000/ilya/autonomous-coding-demo/actions](http://localhost:13000/ilya/autonomous-coding-demo/actions)
 
 ## Demo Credentials
 
 - `Kanboard` admin: `configured in .env`
 - `Kanboard` demo user: `demo.operator / replace-me`
 - `Gitea`: `ilya / replace-me`
-
-## Agent Execution
-
-- the executor watches `Ready` tasks and claims one at a time
-- each task gets its own `git worktree` and branch under `codex/...`
-- the coding agent is `aider`, launched directly by the orchestrator inside the task worktree
-- `aider` uses `OpenRouter` credentials from `.env` together with global `CODING_*` settings
-- `aider` runs in a strict `diff` edit mode and does not mutate `.gitignore`
-- `aider` logs and LLM history are stored under `data/aider`
-- after `aider` finishes, the orchestrator runs authoritative local tests, commits, pushes, and waits for `Gitea Actions`
-- successful tasks are promoted into the managed live runtime worktree under `data/live_runtime`
-- branch, commit, CI, and live commit metadata are written back into the control-room store
-- executor profiles currently cover all backlog areas: `finance`, `orders`, `dashboard`, `products`, `platform`, and `data`
-- backlog tasks are marked with `execution_risk`: `safe`, `medium`, or `review`
-
-For isolated local runs without waiting for the compose orchestrator:
-
-```bash
-PYTHONPATH=. .venv/bin/python scripts/run_executor_once.py --task-id BL-001 --force-ready
-```
-
-## Infrastructure Sizing
-
-If `aider` is configured to use `OpenRouter` or another external model
-provider, this stack does not require a local GPU. The server-side load comes
-from local tests, `Gitea Actions`, git worktrees, logs, and disk I/O rather
-than model inference.
-
-### Current Runtime Characteristics
-
-- the current orchestrator executes one claimed task at a time
-- each task creates a dedicated worktree
-- CI jobs run through `Gitea Actions` and consume the same host resources
-- the demo stack currently uses local `SQLite` files, which is acceptable for a
-  demo but not ideal for a multi-user long-running environment
-
-### Recommended Starting Point
-
-For a small operator team of roughly `5-7` people creating about `5-6` tasks
-per day, start with:
-
-- `8 vCPU`
-- `16 GB RAM`
-- `300-500 GB NVMe SSD`
-- `Ubuntu 24.04 LTS`
-- no GPU
-
-This is a good fit when the autonomous pipeline is mostly processing one active
-task at a time and the target repository has moderate test and build cost.
-
-### Comfortable Capacity
-
-If the educational portal repository grows to include heavier frontend builds,
-backend services, larger test suites, or you want headroom for overlapping CI
-activity, use:
-
-- `12-16 vCPU`
-- `32 GB RAM`
-- `500 GB NVMe SSD`
-- no GPU
-
-This is the recommended production-oriented starting point for a real team,
-even if daily ticket volume is still moderate.
-
-### Database Recommendation
-
-Before relying on the system for ongoing team work, move persistent services off
-`SQLite`:
-
-- use `PostgreSQL` for `Gitea`
-- use `PostgreSQL` for the internal control-room and orchestrator store
-
-`SQLite` is convenient for the demo, but the first operational bottlenecks for
-this architecture are more likely to be database concurrency, CI contention,
-and disk I/O than raw CPU.
 
 ## Port Map
 
@@ -161,53 +185,86 @@ and disk I/O than raw CPU.
 - `13000` -> `gitea:3000`
 - `12222` -> `gitea:22`
 
-## Routing
+## Routing Notes
 
-- human task intake starts in `Kanboard`
-- the demo services share state through `data/demo.db`
-- `control-room` links out to `Kanboard`, `Gitea`, `Gitea Actions`, and the live `pet-app`
-- `kanboard-seed` uses JSON-RPC against `http://kanboard/jsonrpc.php`
-- `gitea-actions-runner` registers itself with the static instance token exposed by `Gitea`
-- the runner and action job containers reach the local forge through `http://host.docker.internal:13000`
-- the orchestrator bind-mounts the repo, creates task worktrees in `data/worktrees`, and manages the live runtime worktree in `data/live_runtime`
-- the orchestrator launches `aider` directly as a subprocess inside the existing container
-- no additional coding-agent service or sandbox containers are created for task execution
+- human intake starts in `Kanboard`
+- demo services share orchestration state through `data/demo.db`
+- `control-room` aggregates task state, branch, CI and live commit metadata
+- `kanboard-seed` talks to `http://kanboard/jsonrpc.php`
+- `orchestrator` bind-mounts the repo and creates worktrees in `data/worktrees`
+- live runtime is maintained in `data/live_runtime`
+- `pet-app` serves code from `data/live_runtime`
+- `orchestrator` launches `aider` directly as a subprocess
+- no separate coding-agent container is created for task execution
+
+## Infrastructure Sizing
+
+If `aider` uses `OpenRouter` or another external model provider, this stack
+does not need a local GPU. The main host load comes from:
+
+- local tests
+- `Gitea Actions`
+- git worktrees
+- Docker I/O
+- logs and persistence
+
+### Recommended Starting Point
+
+For a small operator team around `5-7` people with moderate task volume:
+
+- `8 vCPU`
+- `16 GB RAM`
+- `300-500 GB NVMe SSD`
+- `Ubuntu 24.04 LTS`
+- no GPU
+
+### Comfortable Capacity
+
+For heavier builds, larger repos, and overlapping CI activity:
+
+- `12-16 vCPU`
+- `32 GB RAM`
+- `500 GB NVMe SSD`
+- no GPU
+
+### Database Recommendation
+
+For real long-running usage, move off local `SQLite`:
+
+- use `PostgreSQL` for `Gitea`
+- use `PostgreSQL` for internal orchestrator/control-room state
+
+`SQLite` здесь оставлен потому, что это live demo, а не production install.
 
 ## Safety
 
-Secrets are never committed. Use `.env` for local credentials and API keys.
-A dedicated secret scan script is run before each commit.
-
-Git operations inside the executor are protected by a small safety helper so
-stale `.lock` files do not break autonomous runs.
-
-## License
-
-This repository's original code is licensed under the MIT License. See
-[LICENSE](LICENSE).
-
-Third-party software used by this project, including Kanboard, Gitea, Gitea
-`act_runner`, optional `aider` usage, Python, and Python package dependencies,
-remains under each component's own license. In particular, `aider` is
-`Apache-2.0` licensed and is compatible to use alongside this repository
-without changing the repository's own `MIT` license, as long as upstream
-third-party notices are preserved when redistributed. See
-[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- секреты не коммитятся
+- локальные креды и API keys живут в `.env`
+- перед каждым коммитом гоняется `./scripts/check_no_secrets.sh`
+- git-операции внутри executor защищены от stale `.lock` файлов
+- `Done` и `Failed` карточки остаются видимыми в `Kanboard`
 
 ## Test Notes
 
-Do not run bare `pytest` from the repository root after the live runtime or
-task worktrees exist. Those directories contain mirrored test files and pytest
-will collect duplicates.
+Не запускай bare `pytest` из корня после появления live runtime и task worktrees.
+Там лежат зеркальные тестовые файлы, и pytest соберёт дубли.
 
-Use one of these instead:
+Используй один из вариантов:
 
 ```bash
 PYTHONPATH=. .venv/bin/pytest tests/test_kanboard_sync.py tests/test_orchestrator.py tests/test_store.py tests/test_control_room.py tests/test_git_safety.py tests/test_live_runtime.py
 ```
 
-or:
+или:
 
 ```bash
 PYTHONPATH=. .venv/bin/pytest tests/test_pet_app.py
 ```
+
+## License
+
+Этот репозиторий лицензирован под `MIT`. См. [LICENSE](LICENSE).
+
+Сторонние компоненты, включая `Kanboard`, `Gitea`, `Gitea act_runner`,
+`aider`, Python и зависимости, остаются под своими лицензиями. См.
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
