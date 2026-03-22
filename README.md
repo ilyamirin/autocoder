@@ -19,7 +19,7 @@ enough to produce visible bugs, fixes, tests, and deployments.
 - `Kanboard` is the human task intake and status board
 - `orchestrator` claims `Ready` tasks from `Kanboard`
 - the executor creates a dedicated `git worktree` and `codex/...` branch per run
-- the coding agent calls a local OpenAI-compatible model endpoint and edits only whitelisted files
+- the coding agent runs through `aider` in the existing orchestrator container and edits only whitelisted files
 - the executor runs local tests, pushes to `Gitea`, waits for `Gitea Actions`, and promotes successful changes into the live runtime branch
 - the running `pet-app` serves code from the live runtime worktree, so successful tasks become visible in the browser
 - completed tasks remain visible in the `Done` column in `Kanboard`
@@ -58,6 +58,7 @@ badge on the live `/products` page.
 - `pet-app`: seller dashboard demo application
 - `control-room`: pipeline status dashboard
 - `orchestrator`: task lifecycle engine and autonomous executor
+- `aider`: invoked directly by the orchestrator inside each task worktree
 - `kanboard`: task board and user-facing intake
 - `gitea`: repository hosting and PR UI
 - `gitea-actions-runner`: executes Gitea Actions jobs in Docker
@@ -80,8 +81,11 @@ badge on the live `/products` page.
 
 - the executor watches `Ready` tasks and claims one at a time
 - each task gets its own `git worktree` and branch under `codex/...`
-- the coding agent calls the local OpenAI-compatible model service from `MODEL_BASE_URL`
-- the agent writes full-file replacements for a constrained file set, runs `pytest`, commits, pushes, and waits for `Gitea Actions`
+- the coding agent is `aider`, launched directly by the orchestrator inside the task worktree
+- `aider` uses `OpenRouter` credentials from `.env` together with global `CODING_*` settings
+- `aider` runs in a strict `diff` edit mode and does not mutate `.gitignore`
+- `aider` logs and LLM history are stored under `data/aider`
+- after `aider` finishes, the orchestrator runs authoritative local tests, commits, pushes, and waits for `Gitea Actions`
 - successful tasks are promoted into the managed live runtime worktree under `data/live_runtime`
 - branch, commit, CI, and live commit metadata are written back into the control-room store
 - executor profiles currently cover all backlog areas: `finance`, `orders`, `dashboard`, `products`, `platform`, and `data`
@@ -166,7 +170,8 @@ and disk I/O than raw CPU.
 - `gitea-actions-runner` registers itself with the static instance token exposed by `Gitea`
 - the runner and action job containers reach the local forge through `http://host.docker.internal:13000`
 - the orchestrator bind-mounts the repo, creates task worktrees in `data/worktrees`, and manages the live runtime worktree in `data/live_runtime`
-- the orchestrator reaches the host model service through `host.docker.internal`
+- the orchestrator launches `aider` directly as a subprocess inside the existing container
+- no additional coding-agent service or sandbox containers are created for task execution
 
 ## Safety
 

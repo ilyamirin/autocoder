@@ -20,6 +20,23 @@ from services.orchestrator.task_executor import TaskExecutionError, TaskExecutor
 POLL_INTERVAL_SECONDS = int(os.getenv("ORCHESTRATOR_POLL_INTERVAL_SECONDS", "5"))
 
 
+def _should_accept_remote_status(local_task: dict, remote_status: str) -> bool:
+    local_status = local_task["status"]
+    if local_status in {"planning", "coding", "testing", "deploy"}:
+        return False
+    if remote_status == local_status:
+        return False
+    if remote_status not in {"backlog", "ready", "done", "failed"}:
+        return False
+    if local_status == "done" and remote_status in {"backlog", "ready"}:
+        return False
+    if local_task.get("commit_sha") and remote_status in {"backlog", "ready"}:
+        return False
+    if local_task.get("live_commit_sha") and remote_status in {"backlog", "ready"}:
+        return False
+    return True
+
+
 def sync_terminal_kanboard_state(kanboard_sync: KanboardSync) -> None:
     if not kanboard_sync.enabled:
         return
@@ -29,18 +46,15 @@ def sync_terminal_kanboard_state(kanboard_sync: KanboardSync) -> None:
         if not local_task:
             continue
         remote_status = kanboard_sync.board_status(remote_task)
-        if local_task["status"] in {"planning", "coding", "testing", "deploy"}:
+        if not _should_accept_remote_status(local_task, remote_status):
             continue
-        if remote_status == local_task["status"]:
-            continue
-        if remote_status in {"backlog", "ready", "done", "failed"}:
-            update_task(
-                task_id,
-                status=remote_status,
-                last_error=None if remote_status != "failed" else local_task.get("last_error"),
-                event_type="kanboard",
-                event_message=f"Local task status synced from Kanboard column to {remote_status}.",
-            )
+        update_task(
+            task_id,
+            status=remote_status,
+            last_error=local_task.get("last_error"),
+            event_type="kanboard",
+            event_message=f"Local task status synced from Kanboard column to {remote_status}.",
+        )
 
 
 async def orchestration_loop(stop_event: asyncio.Event, kanboard_sync: KanboardSync) -> None:

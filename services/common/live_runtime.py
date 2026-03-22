@@ -5,7 +5,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from services.common.git_safety import GitSafetyError, run_git_command
+from services.common.git_safety import GitSafetyError, normalize_worktree_gitdir, run_git_command
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,7 @@ def ensure_live_worktree(config: LiveRuntimeConfig) -> Path:
         ("git", "worktree", "add", "--force", str(config.live_worktree_path), config.runtime_branch),
         cwd=config.repo_root,
     )
+    normalize_worktree_gitdir(config.live_worktree_path, config.repo_root)
     _ensure_live_git_identity(config, config.live_worktree_path)
     _prepare_clean_live_worktree(config.live_worktree_path)
     return config.live_worktree_path

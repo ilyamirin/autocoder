@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from services.common.task_catalog import DEFAULT_TASKS
-from services.orchestrator.app import app
+from services.orchestrator.app import _should_accept_remote_status, app
 from services.orchestrator.task_executor import AREA_PROFILES
 
 
@@ -20,3 +20,15 @@ def test_backlog_tasks_have_profiles_and_risk_labels() -> None:
     assert backlog_tasks
     assert {task["target_area"] for task in backlog_tasks}.issubset(AREA_PROFILES.keys())
     assert all(task.get("execution_risk") in {"safe", "medium", "review"} for task in backlog_tasks)
+
+
+def test_completed_task_is_not_downgraded_back_to_backlog() -> None:
+    task = {
+        "status": "done",
+        "commit_sha": "abc123",
+        "live_commit_sha": "def456",
+    }
+
+    assert _should_accept_remote_status(task, "backlog") is False
+    assert _should_accept_remote_status(task, "ready") is False
+    assert _should_accept_remote_status(task, "failed") is True

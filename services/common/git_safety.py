@@ -20,6 +20,30 @@ class GitDirectories:
     common_git_dir: Path
 
 
+def normalize_worktree_gitdir(worktree_path: Path, repo_root: Path | None = None) -> None:
+    dot_git = worktree_path / ".git"
+    if not dot_git.is_file():
+        return
+    content = dot_git.read_text().strip()
+    prefix = "gitdir:"
+    if not content.startswith(prefix):
+        return
+    git_dir_value = content[len(prefix) :].strip()
+    git_dir_path = Path(git_dir_value)
+    if not git_dir_path.is_absolute():
+        return
+    normalized_target = git_dir_path
+    if repo_root is not None:
+        resolved_repo_root = repo_root.resolve()
+        marker = ".git/worktrees"
+        marker_index = git_dir_value.find(marker)
+        if marker_index != -1:
+            suffix = git_dir_value[marker_index:]
+            normalized_target = resolved_repo_root / suffix
+    relative_git_dir = os.path.relpath(normalized_target, worktree_path)
+    dot_git.write_text(f"gitdir: {relative_git_dir}\n")
+
+
 def resolve_git_directories(repo_root: Path) -> GitDirectories:
     local_git_dir = _resolve_git_dir(repo_root)
     commondir_file = local_git_dir / "commondir"

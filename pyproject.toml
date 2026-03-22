@@ -9,6 +9,7 @@ description = "Autonomous coding demo stack with Kanboard, Gitea Actions, and Fa
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+  "aider-chat>=0.86.0,<1.0.0",
   "fastapi>=0.116.0,<1.0.0",
   "httpx>=0.28.0,<1.0.0",
   "jinja2>=3.1.0,<4.0.0",

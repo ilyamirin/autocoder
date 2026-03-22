@@ -8,8 +8,10 @@ operator-facing demo, not as a generic app repo.
 - use local Homebrew Python 3.12
 - use the project virtualenv only: `.venv`
 - main stack is started with `docker compose up --build -d`
-- model endpoint is expected at `http://127.0.0.1:8000/` on the host and is
-  exposed inside containers via `http://host.docker.internal:8000`
+- OpenRouter credentials and global coding-agent settings live in project `.env`
+- the coding agent is `aider`, launched directly by the orchestrator, and it
+  writes logs under `data/aider`
+- `aider` is run in strict `diff` edit mode and must not change `.gitignore`
 
 ## Git Workflow
 
@@ -25,6 +27,7 @@ operator-facing demo, not as a generic app repo.
 - human intake starts in `Kanboard`
 - `orchestrator` syncs with `Kanboard` and claims `Ready` tasks
 - task code changes happen in `data/worktrees/...`
+- `aider` runs directly against each task worktree from the orchestrator
 - successful changes are promoted into the live runtime checkout at
   `data/live_runtime`
 - `pet-app` serves code from `data/live_runtime`, so browser-visible changes are

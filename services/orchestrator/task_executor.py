@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shlex
 import shutil
@@ -8,15 +7,16 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
-from services.common.git_safety import GitSafetyError, run_git_command
-from services.common.live_runtime import LiveRuntimeConfig, ensure_live_worktree, promote_commit_to_live
+from services.common.git_safety import GitSafetyError, normalize_worktree_gitdir, run_git_command
 from services.common.kanboard import KanboardSync
+from services.common.live_runtime import LiveRuntimeConfig, ensure_live_worktree, promote_commit_to_live
 from services.common.store import add_event, mark_task_failed, update_task
 
 
@@ -89,10 +89,20 @@ class ExecutorConfig:
     base_branch: str
     bootstrap_branch: str
     live_worktree_path: Path
-    model_base_url: str
-    model_name: str
-    reasoning_effort: str
-    model_timeout_seconds: int
+    coding_agent_bin: str
+    coding_model: str
+    coding_base_url: str | None
+    coding_timeout_seconds: int
+    coding_reasoning_effort: str
+    coding_extended_thinking_budget: int
+    coding_critic_max_iterations: int
+    coding_map_tokens: int
+    coding_edit_format: str
+    coding_log_root: Path
+    coding_cache_prompts: bool
+    coding_log_completions: bool
+    coding_show_model_warnings: bool
+    coding_check_model_accepts_settings: bool
     push_enabled: bool
     gitea_owner: str
     gitea_repo: str
@@ -118,10 +128,28 @@ class ExecutorConfig:
             live_worktree_path=Path(
                 os.getenv("LIVE_WORKTREE_PATH", repo_root / "data" / "live_runtime")
             ).resolve(),
-            model_base_url=os.getenv("MODEL_BASE_URL", "http://127.0.0.1:8000"),
-            model_name=os.getenv("OPENAI_MODEL", "gpt-5.4"),
-            reasoning_effort=os.getenv("MODEL_REASONING_EFFORT", "medium"),
-            model_timeout_seconds=int(os.getenv("MODEL_TIMEOUT_SECONDS", "120")),
+            coding_agent_bin=os.getenv("CODING_AGENT_BIN", "/usr/local/bin/aider"),
+            coding_model=os.getenv("CODING_MODEL", "openrouter/qwen/qwen3-coder-plus"),
+            coding_base_url=os.getenv("CODING_BASE_URL") or None,
+            coding_timeout_seconds=int(os.getenv("CODING_TIMEOUT_SECONDS", "900")),
+            coding_reasoning_effort=os.getenv("CODING_REASONING_EFFORT", "medium"),
+            coding_extended_thinking_budget=int(
+                os.getenv("CODING_EXTENDED_THINKING_BUDGET", "200000")
+            ),
+            coding_critic_max_iterations=int(os.getenv("CODING_CRITIC_MAX_ITERATIONS", "5")),
+            coding_map_tokens=int(os.getenv("CODING_MAP_TOKENS", "0")),
+            coding_edit_format=os.getenv("CODING_EDIT_FORMAT", "diff"),
+            coding_log_root=Path(
+                os.getenv("CODING_LOG_ROOT", repo_root / "data" / "aider")
+            ).resolve(),
+            coding_cache_prompts=os.getenv("CODING_CACHE_PROMPTS", "true").lower() == "true",
+            coding_log_completions=os.getenv("CODING_LOG_COMPLETIONS", "true").lower() == "true",
+            coding_show_model_warnings=os.getenv("CODING_SHOW_MODEL_WARNINGS", "false").lower()
+            == "true",
+            coding_check_model_accepts_settings=os.getenv(
+                "CODING_CHECK_MODEL_ACCEPTS_SETTINGS", "false"
+            ).lower()
+            == "true",
             push_enabled=os.getenv("EXECUTOR_PUSH_ENABLED", "true").lower() == "true",
             gitea_owner=os.getenv("GITEA_REPO_OWNER", "ilya"),
             gitea_repo=os.getenv("GITEA_REPO_NAME", "autonomous-coding-demo"),
@@ -135,85 +163,232 @@ class ExecutorConfig:
         )
 
 
-class ModelClient:
+class AiderClient:
     def __init__(self, config: ExecutorConfig) -> None:
         self._config = config
 
-    def generate_plan(self, task: dict[str, Any], profile: TaskProfile, repo_root: Path) -> dict[str, Any]:
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a precise software engineer. Return JSON only. "
-                    "Do not wrap it in markdown. "
-                    "You may only modify files from the allowed list. "
-                    "Update or add tests when needed."
-                ),
-            },
-            {
-                "role": "user",
-                "content": self._build_user_prompt(task, profile, repo_root),
-            },
-        ]
-        payload = {
-            "model": self._config.model_name,
-            "reasoning_effort": self._config.reasoning_effort,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-        }
-        with httpx.Client(
-            base_url=self._config.model_base_url.rstrip("/"),
-            timeout=httpx.Timeout(self._config.model_timeout_seconds),
-        ) as client:
-            response = client.post("/v1/chat/completions", json=payload)
-            response.raise_for_status()
-            body = response.json()
+    def run_task(self, task: dict[str, Any], profile: TaskProfile, worktree_path: Path) -> dict[str, Any]:
+        run_root = self._prepare_run_root(task["id"])
+        prompt_path = run_root / "prompt.md"
+        stdout_log_path = run_root / "stdout.log"
+        stderr_log_path = run_root / "stderr.log"
+        chat_history_path = run_root / "chat.history.md"
+        input_history_path = run_root / "input.history"
+        llm_history_path = run_root / "llm.history"
+        prompt_path.write_text(self._build_task_prompt(task, profile))
+
+        command = self._build_command(
+            prompt_path=prompt_path,
+            chat_history_path=chat_history_path,
+            input_history_path=input_history_path,
+            llm_history_path=llm_history_path,
+            profile=profile,
+        )
+        env = self._build_env(
+            chat_history_path=chat_history_path,
+            input_history_path=input_history_path,
+            llm_history_path=llm_history_path,
+        )
 
         try:
-            content = body["choices"][0]["message"]["content"]
-            plan = json.loads(content)
-        except (KeyError, IndexError, json.JSONDecodeError) as exc:
-            raise TaskExecutionError(f"Model returned an invalid response: {body!r}") from exc
+            completed = subprocess.run(
+                command,
+                cwd=worktree_path,
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self._config.coding_timeout_seconds + 120,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout_text = exc.stdout or ""
+            stderr_text = (exc.stderr or "") + "\nTimed out waiting for aider.\n"
+            stdout_log_path.write_text(stdout_text)
+            stderr_log_path.write_text(stderr_text)
+            raise TaskExecutionError(
+                "aider timed out. "
+                f"See logs at {stdout_log_path} and {stderr_log_path}."
+            ) from exc
 
-        if not isinstance(plan.get("files"), list) or not plan["files"]:
-            raise TaskExecutionError("Model did not return any file edits.")
-        return plan
+        stdout_log_path.write_text(completed.stdout)
+        stderr_log_path.write_text(completed.stderr)
 
-    def _build_user_prompt(self, task: dict[str, Any], profile: TaskProfile, repo_root: Path) -> str:
+        if completed.returncode != 0:
+            raise TaskExecutionError(
+                "aider execution did not complete cleanly. "
+                f"See logs at {stdout_log_path}, {stderr_log_path}, and {llm_history_path}."
+            )
+
+        return {
+            "summary": self._extract_summary(completed.stdout),
+            "event_excerpt": self._extract_event_excerpt(completed.stdout),
+            "stdout_log_path": str(stdout_log_path),
+            "stderr_log_path": str(stderr_log_path),
+            "llm_history_path": str(llm_history_path),
+            "chat_history_path": str(chat_history_path),
+            "input_history_path": str(input_history_path),
+        }
+
+    def _build_task_prompt(self, task: dict[str, Any], profile: TaskProfile) -> str:
         sections = [
+            "You are aider working on a single autonomous coding task.",
+            "Operate only inside the current working directory, which is the repository root for this task worktree.",
+            "All file paths below are relative to the current working directory.",
+            "Use the allowed file paths exactly as written. Do not prepend the workspace path to them.",
+            "Do not create commits, do not push branches, and do not change remotes.",
+            "Only edit files from the allowed list below.",
+            "If the task cannot be solved within the allowed files, stop and explain why.",
+            "You are not done until at least one allowed file has changed.",
+            (
+                "Before finishing, do a final self-review pass and tighten the patch if you spot any "
+                f"remaining issue. Internal refinement budget: up to {self._config.coding_critic_max_iterations} passes."
+            ),
+            "Do not narrate shell commands, test commands, or filenames outside structured edits.",
+            "When you are done, leave the modified files in the workspace and finish with a concise summary of the code change.",
+            "",
             f"Task ID: {task['id']}",
             f"Title: {task['title']}",
             f"Kind: {task['kind']}",
             f"Summary: {task['summary']}",
             f"Acceptance criteria: {task['acceptance_criteria']}",
             "",
-            "Allowed files:",
-            *[f"- {path}" for path in profile.allowed_files],
-            "",
-            "Return JSON with this shape:",
-            (
-                '{"summary":"short summary","commit_message":"short commit message",'
-                '"files":[{"path":"relative/path.py","content":"full replacement file content"}]}'
-            ),
-            "",
-            "Relevant repository files:",
         ]
-        for relative_path in profile.allowed_files:
-            file_path = repo_root / relative_path
-            sections.append(f"\nFILE: {relative_path}\n")
-            sections.append(file_path.read_text())
-        return "\n".join(sections)
+        if task.get("last_error"):
+            sections.extend(
+                [
+                    "Previous failed attempt context:",
+                    str(task["last_error"])[:4000],
+                    "",
+                ]
+            )
+        sections.extend(
+            [
+                "Allowed files:",
+                *[f"- {path}" for path in profile.allowed_files],
+                "",
+                f"Required test command: {shlex.join(self._test_command(profile))}",
+                "",
+                "Suggested first steps:",
+                "1. Read the allowed files using the exact relative paths listed below.",
+                "2. Make the smallest correct code change.",
+                "3. Update or add tests if the task needs them.",
+                "4. Run the required test command.",
+                "",
+                "Relevant repository files to inspect first:",
+            ]
+        )
+        sections.extend(f"- {relative_path}" for relative_path in profile.allowed_files)
+        return "\n".join(sections) + "\n"
+
+    def _prepare_run_root(self, task_id: str) -> Path:
+        slug = f"{task_id.lower()}-{datetime.now(tz=timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+        run_root = self._config.coding_log_root / "runs" / slug
+        run_root.mkdir(parents=True, exist_ok=True)
+        return run_root
+
+    def _build_env(
+        self,
+        *,
+        chat_history_path: Path,
+        input_history_path: Path,
+        llm_history_path: Path,
+    ) -> dict[str, str]:
+        env = os.environ.copy()
+        env.update(
+            {
+                "AIDER_MODEL": self._config.coding_model,
+                "AIDER_REASONING_EFFORT": self._config.coding_reasoning_effort,
+                "AIDER_THINKING_TOKENS": str(self._config.coding_extended_thinking_budget),
+                "AIDER_TIMEOUT": str(self._config.coding_timeout_seconds),
+                "AIDER_CACHE_PROMPTS": str(self._config.coding_cache_prompts).lower(),
+                "AIDER_CHAT_HISTORY_FILE": str(chat_history_path),
+                "AIDER_INPUT_HISTORY_FILE": str(input_history_path),
+                "AIDER_LLM_HISTORY_FILE": str(llm_history_path),
+                "AIDER_ANALYTICS": "false",
+                "AIDER_CHECK_UPDATE": "false",
+                "AIDER_PRETTY": "false",
+                "AIDER_STREAM": "false",
+                "AIDER_MAP_TOKENS": str(self._config.coding_map_tokens),
+            }
+        )
+        if self._config.coding_base_url:
+            env["AIDER_OPENAI_API_BASE"] = self._config.coding_base_url
+        return env
+
+    def _build_command(
+        self,
+        *,
+        prompt_path: Path,
+        chat_history_path: Path,
+        input_history_path: Path,
+        llm_history_path: Path,
+        profile: TaskProfile,
+    ) -> tuple[str, ...]:
+        command = [
+            self._config.coding_agent_bin,
+            "--model",
+            self._config.coding_model,
+            "--edit-format",
+            self._config.coding_edit_format,
+            "--reasoning-effort",
+            self._config.coding_reasoning_effort,
+            "--timeout",
+            str(self._config.coding_timeout_seconds),
+            "--message-file",
+            str(prompt_path),
+            "--input-history-file",
+            str(input_history_path),
+            "--chat-history-file",
+            str(chat_history_path),
+            "--llm-history-file",
+            str(llm_history_path),
+            "--map-tokens",
+            str(self._config.coding_map_tokens),
+            "--no-auto-commits",
+            "--no-dirty-commits",
+            "--no-gitignore",
+            "--no-add-gitignore-files",
+            "--no-restore-chat-history",
+            "--no-show-release-notes",
+            "--yes-always",
+            "--subtree-only",
+            "--no-pretty",
+            "--no-stream",
+        ]
+        if self._config.coding_extended_thinking_budget > 0:
+            command.extend(
+                ["--thinking-tokens", str(self._config.coding_extended_thinking_budget)]
+            )
+        if not self._config.coding_show_model_warnings:
+            command.append("--no-show-model-warnings")
+        if not self._config.coding_check_model_accepts_settings:
+            command.append("--no-check-model-accepts-settings")
+        command.extend(profile.allowed_files)
+        return tuple(command)
+
+    def _extract_summary(self, stdout_text: str) -> str:
+        lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
+        if not lines:
+            return "aider applied code changes in the task worktree."
+        return " ".join(lines[-3:])[:400]
+
+    def _extract_event_excerpt(self, stdout_text: str, limit: int = 8) -> list[str]:
+        lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
+        return lines[-limit:]
+
+    def _test_command(self, profile: TaskProfile) -> tuple[str, ...]:
+        return ("python", *profile.test_args)
 
 
 class TaskExecutor:
     def __init__(
         self,
         config: ExecutorConfig | None = None,
-        model_client: ModelClient | None = None,
+        model_client: AiderClient | None = None,
         kanboard_sync: KanboardSync | None = None,
     ) -> None:
         self._config = config or ExecutorConfig.from_env()
-        self._model_client = model_client or ModelClient(self._config)
+        self._model_client = model_client or AiderClient(self._config)
         self._kanboard_sync = kanboard_sync
         self._live_runtime = LiveRuntimeConfig(
             repo_root=self._config.repo_root,
@@ -246,9 +421,24 @@ class TaskExecutor:
                 event_message=f"Created worktree {worktree_path.name} on branch {branch_name}.",
             )
 
-            plan = self._model_client.generate_plan(task, profile, worktree_path)
-            self._apply_plan(worktree_path, profile, plan)
-            add_event(task["id"], "agent", plan.get("summary", "Model generated code changes."))
+            run_result = self._model_client.run_task(task, profile, worktree_path)
+            self._validate_allowed_file_changes(worktree_path, profile)
+            add_event(
+                task["id"],
+                "agent",
+                run_result.get("summary") or "aider applied code changes in the task worktree.",
+            )
+            for excerpt in run_result.get("event_excerpt", []):
+                add_event(task["id"], "agent", excerpt)
+            add_event(
+                task["id"],
+                "agent",
+                (
+                    "aider logs saved to "
+                    f"{run_result.get('stdout_log_path')}, {run_result.get('stderr_log_path')}, "
+                    f"and {run_result.get('llm_history_path')}."
+                ),
+            )
 
             self._update_task(
                 task["id"],
@@ -258,7 +448,7 @@ class TaskExecutor:
             )
             self._run(self._test_command(profile), cwd=worktree_path)
 
-            commit_message = plan.get("commit_message") or f"Resolve {task['id']}: {task['title']}"
+            commit_message = f"Resolve {task['id']}: {task['title']}"
             commit_sha = self._commit_and_optionally_push(worktree_path, branch_name, commit_message)
 
             self._update_task(
@@ -313,20 +503,8 @@ class TaskExecutor:
             ),
             cwd=self._config.repo_root,
         )
+        normalize_worktree_gitdir(worktree_path, self._config.repo_root)
         return worktree_path, branch_name
-
-    def _apply_plan(self, worktree_path: Path, profile: TaskProfile, plan: dict[str, Any]) -> None:
-        allowed_paths = {path: (worktree_path / path).resolve() for path in profile.allowed_files}
-        for file_edit in plan["files"]:
-            relative_path = file_edit.get("path")
-            content = file_edit.get("content")
-            if relative_path not in allowed_paths:
-                raise TaskExecutionError(f"Model tried to edit unsupported file '{relative_path}'.")
-            if not isinstance(content, str):
-                raise TaskExecutionError(f"Model returned non-text content for '{relative_path}'.")
-            target_path = allowed_paths[relative_path]
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_text(content)
 
     def _commit_and_optionally_push(
         self, worktree_path: Path, branch_name: str, commit_message: str
@@ -349,6 +527,20 @@ class TaskExecutor:
         if self._config.push_enabled:
             self._run(("git", "push", self._push_url(), f"HEAD:{branch_name}"), cwd=worktree_path)
         return commit_sha
+
+    def _validate_allowed_file_changes(self, worktree_path: Path, profile: TaskProfile) -> None:
+        changed_files_output = self._run(
+            ("git", "diff", "--name-only", "--relative"),
+            cwd=worktree_path,
+        )
+        changed_files = [line.strip() for line in changed_files_output.splitlines() if line.strip()]
+        if not changed_files:
+            raise TaskExecutionError("aider finished without producing any code changes.")
+        disallowed = sorted(set(changed_files) - set(profile.allowed_files))
+        if disallowed:
+            raise TaskExecutionError(
+                "aider modified files outside the task profile: " + ", ".join(disallowed)
+            )
 
     def _wait_for_ci(self, commit_sha: str, task_id: str) -> None:
         deadline = self._config.ci_poll_timeout_seconds
