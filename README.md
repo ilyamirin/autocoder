@@ -13,6 +13,29 @@ workflow. The architecture, task lifecycle, and operational model are real. The
 domain model, data, and surrounding product context are reduced and anonymized
 for open publication.
 
+## Screenshots
+
+Representative local screens from the running demo stack:
+
+<p align="center">
+  <a href="output/playwright/pet-dashboard.png">
+    <img src="output/playwright/pet-dashboard.png" alt="Pet App dashboard" width="100%">
+  </a>
+</p>
+<p align="center"><em>Pet App dashboard: the live application surface where deploy-visible changes become obvious.</em></p>
+<p align="center">
+  <a href="output/playwright/control-room.png">
+    <img src="output/playwright/control-room.png" alt="Control Room" width="82%">
+  </a>
+</p>
+<p align="center"><em>Control Room: the operator view for task state, pipeline status, and recent execution events.</em></p>
+<p align="center">
+  <a href="output/playwright/pet-products.png">
+    <img src="output/playwright/pet-products.png" alt="Pet App products" width="82%">
+  </a>
+</p>
+<p align="center"><em>Pet App products: a second user-facing screen that makes inventory and merchandising fixes easy to verify.</em></p>
+
 ## What It Demonstrates
 
 - human task intake through `Kanboard`
