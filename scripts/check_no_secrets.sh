@@ -16,7 +16,7 @@ for pattern in "${patterns[@]}"; do
 done
 
 if rg -n -P --hidden --glob '!data/**' --glob '!.git/**' --glob '!.env.example' \
-  '(OPENAI_API_KEY|KANBOARD_.*PASSWORD|GITEA_.*PASSWORD|WOODPECKER_.*SECRET)=(?!replace-me|replace-me@example.com)[^[:space:]]+' .; then
+  '(OPENAI_API_KEY|KANBOARD_.*PASSWORD|GITEA_.*PASSWORD|WOODPECKER_.*SECRET)=(?!replace-me|replace-me@example\.invalid|admin@example\.invalid)[^[:space:]]+' .; then
   echo "Potential concrete credential value found in tracked files." >&2
   exit 1
 fi

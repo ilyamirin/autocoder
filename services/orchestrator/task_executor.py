@@ -156,7 +156,7 @@ class ExecutorConfig:
                 os.getenv("AGENT_POLICY_PATH", repo_root / "docs" / "AGENT_POLICY.md")
             ).resolve(),
             push_enabled=os.getenv("EXECUTOR_PUSH_ENABLED", "true").lower() == "true",
-            gitea_owner=os.getenv("GITEA_REPO_OWNER", "ilya"),
+            gitea_owner=os.getenv("GITEA_REPO_OWNER", "demo-org"),
             gitea_repo=os.getenv("GITEA_REPO_NAME", "autonomous-coding-demo"),
             gitea_push_base_url=os.getenv("GITEA_PUSH_BASE_URL", "http://localhost:13000"),
             gitea_username=os.getenv("GITEA_PUSH_USERNAME", ""),

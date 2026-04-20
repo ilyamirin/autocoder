@@ -7,7 +7,18 @@ name = "autonomous-coding-demo"
 version = "0.1.0"
 description = "Autonomous coding demo stack with Kanboard, Gitea Actions, and FastAPI services."
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.9"
+keywords = ["agents", "aider", "kanboard", "gitea", "automation", "demo"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Framework :: FastAPI",
+  "Topic :: Software Development :: Build Tools",
+]
 dependencies = [
   "aider-chat>=0.86.0,<1.0.0",
   "fastapi>=0.116.0,<1.0.0",
@@ -22,6 +33,11 @@ dependencies = [
 dev = [
   "pytest>=8.4.0,<9.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/example/autonomous-coding-demo"
+Repository = "https://github.com/example/autonomous-coding-demo"
+Documentation = "https://github.com/example/autonomous-coding-demo#readme"
 
 [tool.setuptools]
 include-package-data = true

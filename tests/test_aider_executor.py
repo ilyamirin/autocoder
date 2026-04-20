@@ -53,7 +53,7 @@ def _config(tmp_path: Path) -> ExecutorConfig:
         coding_check_model_accepts_settings=False,
         agent_policy_path=policy_path,
         push_enabled=False,
-        gitea_owner="ilya",
+        gitea_owner="demo-org",
         gitea_repo="autonomous-coding-demo",
         gitea_push_base_url="http://gitea:3000",
         gitea_username="demo",
