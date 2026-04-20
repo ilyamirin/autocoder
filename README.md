@@ -99,6 +99,11 @@ cp .env.example .env
 - `GITEA_PUSH_PASSWORD`
 - `GITEA_RUNNER_REGISTRATION_TOKEN`
 
+If the local Gitea instance is recreated or moved to another port, you can
+force a clean runner re-registration by setting:
+
+- `GITEA_RUNNER_FORCE_REREGISTER=true`
+
 3. Create the local Python environment:
 
 ```bash
